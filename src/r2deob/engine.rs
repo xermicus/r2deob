@@ -1,6 +1,9 @@
 extern crate r2pipe;
 use r2pipe::R2Pipe;
 
+extern crate rand;
+use rand::prelude::random;
+
 use serde_json;
 use serde_json::Value;
 use serde_json::Error;
@@ -56,26 +59,32 @@ impl Session {
 		let _res = self.r2.cmd(&cmd);
 		// Set random input
 		let input = get_random_input(2);
+		for n in self.fcn_config.input_regs.iter() {
+
+		};
 		let res = self.r2.cmd(&("aer edi = ".to_string() + &input[0])); // TODO
 		let _res = self.r2.cmd(&("aer esi = ".to_string() + &input[1])); // TODO
 		// Run
-		let cmd = "12aes"; // TODO
+		let cmd = self.fcn_config.len.clone() + &"aes".to_string();
 		let res = self.r2.cmd(&cmd);
 		// Fetch result
 		let reg: &str = &self.fcn_config.output_reg;
 		let output = self.r2.cmdj("aerj")?[reg].to_string();
 		let result = output.clone();
 
-		if let Ok(_) = self.traces.push_strings(input, output) { println!("{:?}", &self.traces.inputs);return Ok(result) };
+		if let Ok(_) = self.traces.push_strings(input, output) { return Ok(result) };
 		Err(String::new())
 	}
 
-	// Do the deobfuscation
 	pub fn deobfuscate(self) {
-		println!("foo");
+		
 	}
 }
 
 pub fn get_random_input(n: u8) -> Vec<String> {
-	vec!["10".to_string(),"20".to_string()]
+	let mut result: Vec<String> = Vec::new();
+	for i in 0..n {
+		result.push(random::<u8>().to_string()); // TODO: Support multiple random input
+	};
+	result
 }

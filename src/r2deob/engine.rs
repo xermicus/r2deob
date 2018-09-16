@@ -10,6 +10,7 @@ pub struct Session {
 }
 
 pub struct FcnConfig {
+	pub path: String,
 	pub loc: String,
 	pub len: String,
 	pub input_regs: Vec<String>,
@@ -32,8 +33,8 @@ impl Traces {
 
 impl Session {
 	// Spawn r2pipe, init esil
-	pub fn init(path: String, fcn: FcnConfig) -> Result<Session, String> {
-		let mut r2pipe = R2Pipe::spawn(&path, None)?;
+	pub fn init(fcn: FcnConfig) -> Result<Session, String> {
+		let mut r2pipe = R2Pipe::spawn(&fcn.path, None)?;
 		let _anal = r2pipe.cmd("aaa")?;
 
 		// Init esil

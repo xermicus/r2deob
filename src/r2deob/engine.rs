@@ -3,11 +3,6 @@ use r2pipe::R2Pipe;
 
 extern crate rand;
 use rand::prelude::random;
-
-use serde_json;
-use serde_json::Value;
-use serde_json::Error;
-
 pub struct Session {
 	r2: R2Pipe,
 	fcn_config: FcnConfig,
@@ -30,6 +25,7 @@ impl Traces {
 	pub fn push_strings(&mut self, input: Vec<String>, output: String) -> Result<(), String> {
 		self.inputs.push(input.iter().map(|x| x.parse().unwrap()).collect());
 		self.outputs.push(output.parse().unwrap());
+		//println!("{:?};{:?}", self.inputs, self.outputs);
 		Ok(())
 	}
 }
@@ -60,13 +56,13 @@ impl Session {
 		// Set random input
 		let input = get_random_input(2);
 		for n in self.fcn_config.input_regs.iter() {
-
+			
 		};
-		let res = self.r2.cmd(&("aer edi = ".to_string() + &input[0])); // TODO
+		let _res = self.r2.cmd(&("aer edi = ".to_string() + &input[0])); // TODO
 		let _res = self.r2.cmd(&("aer esi = ".to_string() + &input[1])); // TODO
 		// Run
 		let cmd = self.fcn_config.len.clone() + &"aes".to_string();
-		let res = self.r2.cmd(&cmd);
+		let _res = self.r2.cmd(&cmd);
 		// Fetch result
 		let reg: &str = &self.fcn_config.output_reg;
 		let output = self.r2.cmdj("aerj")?[reg].to_string();
@@ -83,7 +79,7 @@ impl Session {
 
 pub fn get_random_input(n: u8) -> Vec<String> {
 	let mut result: Vec<String> = Vec::new();
-	for i in 0..n {
+	for _i in 0..n {
 		result.push(random::<u8>().to_string()); // TODO: Support multiple random input
 	};
 	result

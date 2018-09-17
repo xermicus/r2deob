@@ -4,6 +4,8 @@ use r2pipe::R2Pipe;
 extern crate rand;
 use rand::prelude::random;
 
+use super::synth_sat;
+
 pub struct Session {
 	r2: R2Pipe,
 	fcn_config: FcnConfig,
@@ -74,7 +76,7 @@ impl Session {
 	}
 
 	pub fn deobfuscate(self) {
-		
+		synth_sat::Synthesis::solve_expr(&mut synth_sat::Synthesis {}, self.traces);
 	}
 }
 

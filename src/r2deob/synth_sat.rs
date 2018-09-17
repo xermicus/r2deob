@@ -198,25 +198,23 @@ impl Tree {
 		//		 .----------+----------.
 		//		/ \					  / \	
 		// input,  input x U, U x input, U x U 
+		match self.nodes.get(current_node).unwrap().typ {
+			Symbol::candidate => return,
+			Symbol::constant => return,
+			_ => {},
+		};
 
 		let operators = vec!["+","-","/","*","^","&","|","¬"];
-		let mut speci = Node {
-			exp: "".to_string(), typ: Symbol::candidate, next: Vec::new(), prev: current_node, score: 0.0
-		};
+		let non_terminal = self.nodes.get(current_node).unwrap().exp.clone();
 		for i in inputs.iter() {
-			//let mut node = speci.clone();
-			//node.exp = i.to_string();
-			//self.nodes.push(node);
 			self.add_node(current_node, i.to_string(), Symbol::candidate);
 			for o in operators.iter() {
 				//nodes.push(U + op + U);
-				self.add_node(current_node, "U".to_string() + o + &"U".to_string(), Symbol::intermediate);
-				
+				self.add_node(current_node, non_terminal.clone() + o + &non_terminal.clone(), Symbol::intermediate);
 				//nodes.push("input".to_string() + op + U);
-				self.add_node(current_node, i.to_string() + o + &"U".to_string(), Symbol::intermediate);
-
+				self.add_node(current_node, i.to_string() + o + &non_terminal.clone(), Symbol::intermediate);
 				//nodes.push(U + op + "input";
-				self.add_node(current_node, "U".to_string() + o + &i, Symbol::intermediate);
+				self.add_node(current_node, non_terminal.clone() + o + &i, Symbol::intermediate);
 			};
 		};
 	}

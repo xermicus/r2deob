@@ -3,6 +3,7 @@ use r2pipe::R2Pipe;
 
 extern crate rand;
 use rand::prelude::random;
+
 pub struct Session {
 	r2: R2Pipe,
 	fcn_config: FcnConfig,
@@ -55,12 +56,13 @@ impl Session {
 		let cmd = "aei;aeim;aeip";
 		let _res = self.r2.cmd(&cmd);
 		// Set random input
-		let input = get_random_input(2);
-		for n in self.fcn_config.input_regs.iter() {
-			
-		};
-		let _res = self.r2.cmd(&("aer edi = ".to_string() + &input[0])); // TODO
-		let _res = self.r2.cmd(&("aer esi = ".to_string() + &input[1])); // TODO
+		let input = get_random_input(self.fcn_config.input_regs.len() as u8);
+		let mut cmds: Vec<String>;
+		for n in 0..self.fcn_config.input_regs.len() {
+			let cmd = "aer ".to_string() + &self.fcn_config.input_regs.get(n).unwrap()
+				+ &" = ".to_string() + input.get(n).unwrap();
+			let _res = self.r2.cmd(&cmd);
+		}
 		// Run
 		let cmd = self.fcn_config.len.clone() + &"aes".to_string();
 		let _res = self.r2.cmd(&cmd);
@@ -78,10 +80,10 @@ impl Session {
 	}
 }
 
-pub fn get_random_input(n: u8) -> Vec<String> {
+fn get_random_input(n: u8) -> Vec<String> {
 	let mut result: Vec<String> = Vec::new();
 	for _i in 0..n {
-		result.push(random::<u8>().to_string()); // TODO: Support multiple random input
+		result.push(random::<u8>().to_string()); // TODO: Add types enum to support multiple random input
 	};
 	result
 }

@@ -12,9 +12,8 @@ fn main() {
 
 	let mut session = r2deob::engine::Session::init(target).unwrap();
 
-	println!("{:?}", session.add_trace());
-	println!("{:?}", session.add_trace());
-	session.deobfuscate();
+	session.add_trace();
+	session.add_trace();
 	
-	r2deob::synth_sat::demo();
+	session.deobfuscate();
 }

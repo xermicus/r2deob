@@ -124,25 +124,39 @@ impl ::std::fmt::Display for Op {
     }
 }
 
+#[derive(Copy, Clone)]
 enum Symbol {
 	non_terminal,
-	input,
+ 	//input,
 	constant,
 	intermediate,
 	candidate
 }
 
+impl ::std::fmt::Debug for Symbol {
+    fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        w.write_str(match *self {
+			Symbol::non_terminal => "U",
+			Symbol::constant => "C",
+			Symbol::intermediate => "Intermediate",
+			Symbol::candidate => "Candidate",
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
 struct Node {
 	exp: String,
 	typ: Symbol,
-	next: Option<usize>,
-	prev: Option<usize>,
+	next: Vec<usize>,
+	prev: usize,
 	score: f32
 }
 
+#[derive(Debug)]
 struct Tree {
 	nodes: Vec<Node>,
-	grammar: Grammar,
+	//operators: Vec<&'static str>
 }
 
 impl Tree {
@@ -153,44 +167,69 @@ impl Tree {
 
 	}
 
+	fn add_node(&mut self, c: usize, e: String, t: Symbol) {
+		self.nodes.push(Node {
+			exp: e,
+			typ: t,
+			next: Vec::new(),
+			prev: c,
+			score: 0.0
+		});
+		let index = self.nodes.len()-1;
+		self.nodes[c].next.push(index);
+	}
+
+	fn init() -> Tree {
+		Tree {
+			nodes: vec![ Node {
+				exp: "U".to_string(),
+				typ: Symbol::non_terminal,
+				next: Vec::new(),
+				prev: 0,
+				score: 0.0
+			}]
+		}
+	}
+
 	// TODO: Add function to solve intermediate with a constant C
 
-	fn derive_node(&mut self, current_node: usize, n_inputs: u8) {
+	fn derive_node(&mut self, current_node: usize, inputs: Vec<String>) {
 		//					U
 		//		 .----------+----------.
 		//		/ \					  / \	
 		// input,  input x U, U x input, U x U 
-		let mut nodes: Vec<Node>;
-		let operators = 2;
-		for n in 0..n_inputs {
-			//nodes.push("input".to_string());
-			for o in 0..operators {
+
+		let operators = vec!["+","-","/","*","^","&","|","¬"];
+		let mut speci = Node {
+			exp: "".to_string(), typ: Symbol::candidate, next: Vec::new(), prev: current_node, score: 0.0
+		};
+		for i in inputs.iter() {
+			//let mut node = speci.clone();
+			//node.exp = i.to_string();
+			//self.nodes.push(node);
+			self.add_node(current_node, i.to_string(), Symbol::candidate);
+			for o in operators.iter() {
 				//nodes.push(U + op + U);
+				self.add_node(current_node, "U".to_string() + o + &"U".to_string(), Symbol::intermediate);
+				
 				//nodes.push("input".to_string() + op + U);
+				self.add_node(current_node, i.to_string() + o + &"U".to_string(), Symbol::intermediate);
+
 				//nodes.push(U + op + "input";
+				self.add_node(current_node, "U".to_string() + o + &i, Symbol::intermediate);
 			};
 		};
-
-		let node = Node { exp: "".to_string(), typ: Symbol::non_terminal, next: None, prev: None, score: 0.0 };
-		self.nodes.push(node);
-
 	}
 }
 
-struct Grammar {
-	symbols: Vec<Symbol>,
-	operators: Vec<Op>
-}
-
-impl Grammar { }
-
 pub struct Synthesis {
-
 }
 
 impl Synthesis {
-	pub fn next_expr(&mut self) {
-		
+	pub fn walk_tree(inputs: Vec<String>) {
+		let mut tree = Tree::init();
+		tree.derive_node(0 as usize, inputs);
+		println!("{:?}", tree);
 	}
 
 	pub fn solve_expr(&mut self, trace: Traces) {

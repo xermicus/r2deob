@@ -22,12 +22,14 @@ pub struct FcnConfig {
 
 pub struct Traces {
 	pub inputs: Vec<Vec<u64>>,
+	pub input_strings: Vec<Vec<String>>,
 	pub outputs: Vec<u64>
 }
 
 impl Traces {
 	pub fn push_strings(&mut self, input: Vec<String>, output: String) -> Result<(), String> {
 		self.inputs.push(input.iter().map(|x| x.parse().unwrap()).collect());
+		self.input_strings.push(input);
 		self.outputs.push(output.parse().unwrap());
 		Ok(())
 	}
@@ -45,7 +47,7 @@ impl Session {
 		Ok(Session {
 			r2: r2pipe,
 			fcn_config: fcn,
-			traces: Traces { inputs: Vec::new(), outputs: Vec::new() }
+			traces: Traces { inputs: Vec::new(), input_strings: Vec::new(), outputs: Vec::new() }
 		})
 	}
 
@@ -76,7 +78,9 @@ impl Session {
 	}
 
 	pub fn deobfuscate(self) {
+		let inputs = self.traces.input_strings.get(0).clone().unwrap().to_vec();
 		synth_sat::Synthesis::solve_expr(&mut synth_sat::Synthesis {}, self.traces);
+		synth_sat::Synthesis::walk_tree(inputs);
 	}
 }
 

@@ -88,7 +88,6 @@ impl Session {
 	}
 
 	pub fn deobfuscate(self) {
-		//let inputs = self.traces.input_strings.get(0).clone().unwrap().to_vec();
 		let inputs = self.traces.inputs_as_str().get(0).unwrap().clone();
 		synth_sat::Synthesis::solve_expr(&mut synth_sat::Synthesis {}, self.traces);
 		synth_sat::Synthesis::walk_tree(inputs);

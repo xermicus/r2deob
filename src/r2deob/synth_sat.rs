@@ -132,6 +132,16 @@ enum Symbol {
 	intermediate,
 	candidate
 }
+impl std::fmt::Display for Symbol {
+    fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        w.write_str(match *self {
+			Symbol::non_terminal => "U",
+			Symbol::constant => "C",
+			Symbol::intermediate => "Intermediate",
+			Symbol::candidate => "Candidate",
+        })
+    }
+}
 
 impl ::std::fmt::Debug for Symbol {
     fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
@@ -153,35 +163,31 @@ struct Node {
 	score: f32
 }
 
+impl Node {
+	fn print_childs(&self) {
+		for n in self.next.iter() {
+			println!("{}", n);
+		}
+	}
+}
+
 impl std::fmt::Display for Node {
     fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-		w.write_str("expression: "); w.write_str(&self.prev.to_string());
-		w.write_str("type: "); w.write_str(&self.prev.to_string());
-		//w.write_str("parent: {}", &self.prev);
-		//w.write_str("score: {}", &self.score);
-		//w.write_str("childs:");
-		//for c in self.next.iter() {
-		//	w.write_str("{:?}", &c);
-		//};
-		Ok(())
+		w.write_str("\texpression:\t"); w.write_str(&self.exp);
+		w.write_str("\n\ttype:\t\t"); w.write_str(&self.typ.to_string());
+		w.write_str("\n\tscore:\t\t"); w.write_str(&self.score.to_string());
+		w.write_str("\n\tparent:\t\t"); w.write_str(&self.prev.to_string());
+		w.write_str("\n\tn childs:\t"); w.write_str(&self.next.len().to_string());
+		Ok(w.write_str("\n")?)
     }
 }
 
 #[derive(Debug)]
 struct Tree {
 	nodes: Vec<Node>,
-	//operators: Vec<&'static str>
 }
 
 impl Tree {
-	fn get_next(current: usize) {
-
-	}
-
-	fn get_prev(current: usize) {
-
-	}
-
 	fn add_node(&mut self, c: usize, e: String, t: Symbol) {
 		self.nodes.push(Node {
 			exp: e,
@@ -235,6 +241,20 @@ impl Tree {
 	}
 }
 
+impl std::fmt::Display for Tree {
+    fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+		for n in 0..self.nodes.len() {
+			w.write_str("Node #"); w.write_str(&n.to_string()); w.write_str("\n");
+			w.write_str(&self.nodes[n.clone() as usize].to_string());
+			//for c in self.nodes[n].next.iter() { 
+			//	w.write_str("Node #"); w.write_str(&c.to_string()); w.write_str("\n");
+			//	w.write_str(&self.nodes[c.clone() as usize].to_string());
+			//};
+		}
+		Ok(())
+    }
+}
+
 pub struct Synthesis {
 }
 
@@ -243,10 +263,11 @@ impl Synthesis {
 		let mut tree = Tree::init();
 		tree.derive_node(0 as usize, inputs.clone());
 		tree.derive_node(1 as usize, inputs.clone());
-		//tree.derive_node(18 as usize, inputs.clone());
+		tree.derive_node(18 as usize, inputs.clone());
 
-		println!("{:?}", tree);
-		println!("\n{:?}", tree.nodes.get(1));
+		println!("{}", tree);
+		//println!("{:?}", tree);
+		//println!("\n{}", tree.nodes.get(18).unwrap());
 		//println!("\n{:?}", tree.nodes.get(49));
 		//println!("\n{:?}", tree.nodes.get(1));
 	}

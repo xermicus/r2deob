@@ -69,6 +69,7 @@ impl ::std::fmt::Display for Cst {
         }
     }
 }
+
 //impl From<bool> for Cst {
 //    fn from(b: bool) -> Self {
 //        Cst::B(b)
@@ -164,21 +165,17 @@ struct Node {
 }
 
 impl Node {
-	fn print_childs(&self) {
-		for n in self.next.iter() {
-			println!("{}", n);
-		}
-	}
 }
 
 impl std::fmt::Display for Node {
     fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+		w.write_str("Node\n");
 		w.write_str("\texpression:\t"); w.write_str(&self.exp);
 		w.write_str("\n\ttype:\t\t"); w.write_str(&self.typ.to_string());
 		w.write_str("\n\tscore:\t\t"); w.write_str(&self.score.to_string());
 		w.write_str("\n\tparent:\t\t"); w.write_str(&self.prev.to_string());
 		w.write_str("\n\tn childs:\t"); w.write_str(&self.next.len().to_string());
-		Ok(w.write_str("\n")?)
+		Ok(())//Ok(w.write_str("\n")?)
     }
 }
 
@@ -244,7 +241,7 @@ impl Tree {
 impl std::fmt::Display for Tree {
     fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
 		for n in 0..self.nodes.len() {
-			w.write_str("Node #"); w.write_str(&n.to_string()); w.write_str("\n");
+			w.write_str("Node #"); w.write_str(&n.to_string());
 			w.write_str(&self.nodes[n.clone() as usize].to_string());
 			//for c in self.nodes[n].next.iter() { 
 			//	w.write_str("Node #"); w.write_str(&c.to_string()); w.write_str("\n");
@@ -265,11 +262,10 @@ impl Synthesis {
 		tree.derive_node(1 as usize, inputs.clone());
 		tree.derive_node(18 as usize, inputs.clone());
 
-		println!("{}", tree);
-		//println!("{:?}", tree);
-		//println!("\n{}", tree.nodes.get(18).unwrap());
-		//println!("\n{:?}", tree.nodes.get(49));
-		//println!("\n{:?}", tree.nodes.get(1));
+		//println!("{}", tree);
+		let node18 = tree.nodes.get(18).unwrap();
+		println!("{}", node18);
+		for n in node18.next.iter() { println!("{} {}", n, tree.nodes[n.clone()]); };
 	}
 
 	pub fn solve_expr(&mut self, trace: Traces) {

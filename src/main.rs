@@ -15,5 +15,5 @@ fn main() {
 	session.add_trace();
 	session.add_trace();
 	
-	session.deobfuscate();
+	session.deobfuscate(r2deob::engine::Synthesiser::Tree);
 }

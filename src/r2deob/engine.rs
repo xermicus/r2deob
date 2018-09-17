@@ -6,6 +6,11 @@ use rand::prelude::random;
 
 use super::synth_sat;
 
+pub enum Synthesiser {
+	Tree,
+	LibEvoasm
+}
+
 pub struct Session {
 	r2: R2Pipe,
 	fcn_config: FcnConfig,
@@ -87,10 +92,17 @@ impl Session {
 		Err(String::new())
 	}
 
-	pub fn deobfuscate(self) {
+	pub fn deobfuscate(self, backend: Synthesiser) {
 		let inputs = self.traces.inputs_as_str().get(0).unwrap().clone();
-		synth_sat::Synthesis::solve_expr(&mut synth_sat::Synthesis {}, self.traces);
-		synth_sat::Synthesis::walk_tree(inputs);
+		match backend {
+			Synthesiser::Tree => {
+				synth_sat::Synthesis::solve_expr(&mut synth_sat::Synthesis {}, self.traces);
+				synth_sat::Synthesis::walk_tree(inputs);
+			},
+			Synthesiser::LibEvoasm => {
+				println!("not implemented");
+			}
+		}
 	}
 }
 

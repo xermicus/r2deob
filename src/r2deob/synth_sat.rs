@@ -153,6 +153,20 @@ struct Node {
 	score: f32
 }
 
+impl std::fmt::Display for Node {
+    fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+		w.write_str("expression: "); w.write_str(&self.prev.to_string());
+		w.write_str("type: "); w.write_str(&self.prev.to_string());
+		//w.write_str("parent: {}", &self.prev);
+		//w.write_str("score: {}", &self.score);
+		//w.write_str("childs:");
+		//for c in self.next.iter() {
+		//	w.write_str("{:?}", &c);
+		//};
+		Ok(())
+    }
+}
+
 #[derive(Debug)]
 struct Tree {
 	nodes: Vec<Node>,
@@ -163,6 +177,7 @@ impl Tree {
 	fn get_next(current: usize) {
 
 	}
+
 	fn get_prev(current: usize) {
 
 	}
@@ -204,7 +219,7 @@ impl Tree {
 			_ => {},
 		};
 
-		let operators = vec!["+","-","/","*","^","&","|","¬"];
+		let operators = vec!["+","-","/","*","&","|","¬"];
 		let non_terminal = self.nodes.get(current_node).unwrap().exp.clone();
 		for i in inputs.iter() {
 			self.add_node(current_node, i.to_string(), Symbol::candidate);
@@ -226,8 +241,14 @@ pub struct Synthesis {
 impl Synthesis {
 	pub fn walk_tree(inputs: Vec<String>) {
 		let mut tree = Tree::init();
-		tree.derive_node(0 as usize, inputs);
+		tree.derive_node(0 as usize, inputs.clone());
+		tree.derive_node(1 as usize, inputs.clone());
+		//tree.derive_node(18 as usize, inputs.clone());
+
 		println!("{:?}", tree);
+		println!("\n{:?}", tree.nodes.get(1));
+		//println!("\n{:?}", tree.nodes.get(49));
+		//println!("\n{:?}", tree.nodes.get(1));
 	}
 
 	pub fn solve_expr(&mut self, trace: Traces) {

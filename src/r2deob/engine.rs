@@ -22,17 +22,27 @@ pub struct FcnConfig {
 
 pub struct Traces {
 	pub inputs: Vec<Vec<u64>>,
-	pub input_strings: Vec<Vec<String>>,
 	pub outputs: Vec<u64>
 }
 
 impl Traces {
 	pub fn push_strings(&mut self, input: Vec<String>, output: String) -> Result<(), String> {
 		self.inputs.push(input.iter().map(|x| x.parse().unwrap()).collect());
-		self.input_strings.push(input);
 		self.outputs.push(output.parse().unwrap());
 		Ok(())
 	}
+
+	pub fn inputs_as_str(&self) -> Vec<Vec<String>>{
+		let mut result: Vec<Vec<String>> = Vec::new();
+		for i in self.inputs.iter() {
+			result.push(i.iter().map(|x| x.to_string()).collect());
+		};
+		result
+	}
+
+	//fn input_as_str(&self, n: Vec<u64>) -> Vec<String> {
+	//	n.iter().map(|x| x.to_string()).collect()
+	//}
 }
 
 impl Session {
@@ -47,7 +57,7 @@ impl Session {
 		Ok(Session {
 			r2: r2pipe,
 			fcn_config: fcn,
-			traces: Traces { inputs: Vec::new(), input_strings: Vec::new(), outputs: Vec::new() }
+			traces: Traces { inputs: Vec::new(), outputs: Vec::new() }
 		})
 	}
 
@@ -78,7 +88,8 @@ impl Session {
 	}
 
 	pub fn deobfuscate(self) {
-		let inputs = self.traces.input_strings.get(0).clone().unwrap().to_vec();
+		//let inputs = self.traces.input_strings.get(0).clone().unwrap().to_vec();
+		let inputs = self.traces.inputs_as_str().get(0).unwrap().clone();
 		synth_sat::Synthesis::solve_expr(&mut synth_sat::Synthesis {}, self.traces);
 		synth_sat::Synthesis::walk_tree(inputs);
 	}

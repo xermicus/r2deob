@@ -1,12 +1,6 @@
 extern crate rsmt2;
 mod r2deob;
 
-use rsmt2::SmtRes;
-use rsmt2::SmtConf;
-use rsmt2::Solver;
-use rsmt2::parse::IdentParser;
-use rsmt2::parse::ModelParser;
-
 fn main() {
 	let target = r2deob::engine::FcnConfig {
 		path: "/home/cyrill/r2deob/a.out".to_string(),

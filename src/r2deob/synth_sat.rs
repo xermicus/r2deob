@@ -1,5 +1,5 @@
 use rsmt2::SmtRes;
-use rsmt2::SmtConf;
+//use rsmt2::SmtConf;
 use rsmt2::Solver;
 use rsmt2::parse::IdentParser;
 use rsmt2::parse::ModelParser;
@@ -15,7 +15,7 @@ impl<'a> IdentParser<String, String, &'a str> for Parser {
 		match input {
 		"Int" => Ok("Int".into()),
 		"Bool" => Ok("Bool".into()),
-		sort => Ok("Bool".into())//println!("unexpected sort `{}`", sort),
+		_sort => Ok("Bool".into())//println!("unexpected sort `{}`", sort),
 		}
 	}
 }
@@ -107,35 +107,34 @@ impl ::std::fmt::Display for Cst {
 //        Cst::I(i)
 //    }
 //}
-/// An example of expression.
-pub enum Expr {
-    /// A constant.
-    C(Cst),
-    /// Variable.
-    V(String),
-    /// Operator application.
-    O(Op, Vec<Expr>),
-}
-impl Expr {
-    pub fn cst<C: Into<Cst>>(c: C) -> Self {
-        Expr::C(c.into())
-    }
-}
+///// An example of expression.
+//pub enum Expr {
+//    /// A constant.
+//    C(Cst),
+//    /// Variable.
+//    V(String),
+//    /// Operator application.
+//    O(Op, Vec<Expr>),
+//}
+//impl Expr {
+//    pub fn cst<C: Into<Cst>>(c: C) -> Self {
+//        Expr::C(c.into())
+//    }
+//}
 
 pub fn demo() {
 	let mut solver = Solver::default(Parser).unwrap();
 	
 	solver.declare_const("n", "Int").unwrap();
-	//     ^^^^^^^^^^^^^~~~ same as `declare-fun` for a nullary symbol
 	solver.declare_const("m", "Int").unwrap();
-	solver.assert("(= (+ (* n n) (* m m)) 9)").unwrap();
-	println!("{:?}",solver.check_sat().unwrap());
+	let expression = "(= (+ (* n n) (* m m)) 9)";
+	solver.assert(&expression).unwrap();
+	solver.check_sat().expect("expected true expression");
 	
 	let model = solver.get_model_const().expect("while getting model");
 
+	println!("Model for expression: {}", &expression);
 	for (ident, typ, value) in model {
-		println!("{}",ident);
-		println!("{}",typ);
-		println!("{}",value);
+		println!("{}: {} = {}",ident,typ,value);
 	}
 }

@@ -27,7 +27,6 @@ impl Traces {
 	pub fn push_strings(&mut self, input: Vec<String>, output: String) -> Result<(), String> {
 		self.inputs.push(input.iter().map(|x| x.parse().unwrap()).collect());
 		self.outputs.push(output.parse().unwrap());
-		//println!("{:?};{:?}", self.inputs, self.outputs);
 		Ok(())
 	}
 }
@@ -57,7 +56,6 @@ impl Session {
 		let _res = self.r2.cmd(&cmd);
 		// Set random input
 		let input = get_random_input(self.fcn_config.input_regs.len() as u8);
-		let mut cmds: Vec<String>;
 		for n in 0..self.fcn_config.input_regs.len() {
 			let cmd = "aer ".to_string() + &self.fcn_config.input_regs.get(n).unwrap()
 				+ &" = ".to_string() + input.get(n).unwrap();

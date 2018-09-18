@@ -21,6 +21,7 @@ impl<'a> IdentParser<String, String, &'a str> for Parser {
 		}
 	}
 }
+
 impl<'a> ModelParser<String, String, Cst, &'a str> for Parser {
     fn parse_value(
         self,
@@ -200,7 +201,7 @@ impl Tree {
 		Tree {
 			nodes: vec![ Node {
 				exp: "U".to_string(),
-				typ: Symbol::intermediate,
+				typ: Symbol::non_terminal,
 				next: Vec::new(),
 				prev: 0,
 				score: 0.0
@@ -209,7 +210,6 @@ impl Tree {
 	}
 
 	// TODO: Add function to solve intermediate with a constant C
-
 	fn derive_node(&mut self, current_node: usize, inputs: Vec<String>) {
 		//					U
 		//		 .----------+----------.
@@ -221,28 +221,16 @@ impl Tree {
 			_ => {},
 		};
 
-		// Build all representations for a non-terminal
-		let operators = vec!["+","-"];
-		let mut expressions: Vec<(_,_)> = Vec::new();
-		for i in inputs.iter() {
-			expressions.push((i.to_string(), Symbol::candidate));
-			for o in operators.iter() {
-				expressions.push(("U".to_string() + o + "U", Symbol::intermediate));
-				expressions.push((i.to_string() + o + "U", Symbol::intermediate));
-				expressions.push(("U".to_string() + o + &i, Symbol::intermediate));
-			};
-		};
-
-		// Add new nodes for all combinations of non-terminals and expressions
-		let non_terminal = &self.nodes.get(current_node).unwrap().exp;
-		let index_exp: Vec<(_,_)> = non_terminal.char_indices().collect();
+		let expressions = enum_expressions(inputs);
+		let current_exp = &self.nodes.get(current_node).unwrap().exp;
+		let index_exp: Vec<(_,_)> = current_exp.char_indices().collect();
 		for (exp,typ) in expressions {
 			let mut cand = String::new();
 			for (i, c) in &index_exp {
 				if c == &'U' { cand.push('('); cand.push_str(&exp); cand.push(')'); }
 				else { cand.push(c.clone()); };
 			};
-			self.add_node(current_node, cand, typ); // determine i or c
+			self.add_node(current_node, cand, typ);
 		};
 	}
 
@@ -294,6 +282,20 @@ impl Synthesis {
 		};
 		demo();
 	}
+}
+
+fn enum_expressions(inputs: Vec<String>) -> Vec<(String,Symbol)> {
+	let operators = vec!["+","-"];
+	let mut expressions: Vec<(String,Symbol)> = Vec::new();
+	for i in inputs.iter() {
+		expressions.push((i.to_string(), Symbol::candidate));
+		for o in operators.iter() {
+			expressions.push(("U".to_string() + o + "U", Symbol::intermediate));
+			expressions.push((i.to_string() + o + "U", Symbol::intermediate));
+			expressions.push(("U".to_string() + o + &i, Symbol::intermediate));
+		};
+	};
+	expressions
 }
 
 // ------------------------

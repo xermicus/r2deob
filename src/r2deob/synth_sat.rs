@@ -165,14 +165,11 @@ struct Node {
 }
 
 impl Node {
-	fn playout(&self) {
-		
-	}
 }
 
 impl std::fmt::Display for Node {
     fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-		w.write_str("Node\n");
+		//w.write_str("Node\n");
 		w.write_str("\texpression:\t"); w.write_str(&self.exp);
 		w.write_str("\n\ttype:\t\t"); w.write_str(&self.typ.to_string());
 		w.write_str("\n\tscore:\t\t"); w.write_str(&self.score.to_string());
@@ -225,13 +222,19 @@ impl Tree {
 			_ => {},
 		};
 
-		let operators = vec!["+","-","/","*","&","|","¬"];
+		let operators = vec!["+","-"];
+		//let operators = vec!["+","-","/","*","&","|","¬"];
+		// TODO: Do this for every U instead for whole theorem
 		let non_terminal = "(".to_string() + &self.nodes.get(current_node).unwrap().exp + ")";
+		//for c in non_terminal.iter() {
+		//	
+		//}
 		for i in inputs.iter() {
 			self.add_node(current_node, i.to_string(), Symbol::candidate);
 			for o in operators.iter() {
 				//nodes.push(U + op + U);
-				self.add_node(current_node, non_terminal.clone() + o + &non_terminal.clone(), Symbol::intermediate);
+				self.add_node(current_node, non_terminal.clone() + o + &non_terminal.clone(),
+					Symbol::intermediate);
 				//nodes.push("input".to_string() + op + U);
 				self.add_node(current_node, i.to_string() + o + &non_terminal.clone(), Symbol::intermediate);
 				//nodes.push(U + op + "input";
@@ -239,13 +242,28 @@ impl Tree {
 			};
 		};
 	}
+
+	fn get_node_candidates(&self, node: usize) -> Vec<String> {
+		match &self.nodes[node].typ {
+			Symbol::candidate => return vec![self.nodes[node].exp.clone()],
+			Symbol::intermediate => {
+				let mut candidates = Vec::new();
+				for n in self.nodes.get(node).unwrap().next.iter() {
+					candidates.append(&mut self.get_node_candidates(n.clone() as usize));
+				};
+				return candidates
+			},
+			_ => { println!("ERROR wrong node type for playout"); }
+		}
+		Vec::new() 
+	}
 }
 
 impl std::fmt::Display for Tree {
     fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
 		for n in 0..self.nodes.len() {
-			w.write_str("Node #"); w.write_str(&n.to_string());
-			w.write_str(&self.nodes[n.clone() as usize].to_string());
+			w.write_str("Node #"); w.write_str(&n.to_string()); w.write_str("\n");
+			w.write_str(&self.nodes[n.clone() as usize].to_string()); w.write_str("\n");
 			//for c in self.nodes[n].next.iter() { 
 			//	w.write_str("Node #"); w.write_str(&c.to_string()); w.write_str("\n");
 			//	w.write_str(&self.nodes[c.clone() as usize].to_string());
@@ -263,13 +281,14 @@ impl Synthesis {
 	pub fn walk_tree(inputs: Vec<String>) {
 		let mut tree = Tree::init();
 		tree.derive_node(0 as usize, inputs.clone());
-		tree.derive_node(1 as usize, inputs.clone());
-		tree.derive_node(18 as usize, inputs.clone());
+		tree.derive_node(3 as usize, inputs.clone());
 
-		//println!("{}", tree);
-		let node18 = tree.nodes.get(18).unwrap();
-		println!("{}", node18);
-		for n in node18.next.iter() { println!("{} {}", n, tree.nodes[n.clone()]); };
+		println!("{}", tree);
+		let node18 = tree.nodes.get(3).unwrap();
+		//println!("{}", node18);
+		for n in node18.next.iter() { println!("Node #{}\n{}", n, tree.nodes[n.clone()]); };
+
+		println!("{:?}", tree.get_node_candidates(3));
 	}
 
 	pub fn solve_expr(&mut self, trace: Traces) {

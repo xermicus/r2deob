@@ -165,6 +165,9 @@ struct Node {
 }
 
 impl Node {
+	fn playout(&self) {
+		
+	}
 }
 
 impl std::fmt::Display for Node {
@@ -223,7 +226,7 @@ impl Tree {
 		};
 
 		let operators = vec!["+","-","/","*","&","|","¬"];
-		let non_terminal = self.nodes.get(current_node).unwrap().exp.clone();
+		let non_terminal = "(".to_string() + &self.nodes.get(current_node).unwrap().exp + ")";
 		for i in inputs.iter() {
 			self.add_node(current_node, i.to_string(), Symbol::candidate);
 			for o in operators.iter() {
@@ -253,6 +256,7 @@ impl std::fmt::Display for Tree {
 }
 
 pub struct Synthesis {
+
 }
 
 impl Synthesis {

@@ -45,9 +45,6 @@ impl Traces {
 		result
 	}
 
-	//fn input_as_str(&self, n: Vec<u64>) -> Vec<String> {
-	//	n.iter().map(|x| x.to_string()).collect()
-	//}
 }
 
 impl Session {
@@ -96,7 +93,7 @@ impl Session {
 		let inputs = self.traces.inputs_as_str().get(0).unwrap().clone();
 		match backend {
 			Synthesiser::Tree => {
-				synth_sat::Synthesis::solve_expr(&mut synth_sat::Synthesis {}, self.traces);
+				//synth_sat::Synthesis::solve_expr(&mut synth_sat::Synthesis {}, self.traces);
 				synth_sat::Synthesis::walk_tree(inputs);
 			},
 			Synthesiser::LibEvoasm => {

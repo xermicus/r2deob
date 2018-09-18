@@ -246,6 +246,7 @@ impl Tree {
 		};
 	}
 
+	// TODO: Remove or change
 	fn get_node_candidates(&self, node: usize) -> Vec<String> {
 		match &self.nodes[node].typ {
 			Symbol::candidate => return vec![self.nodes[node].exp.clone()],
@@ -284,7 +285,7 @@ impl Synthesis {
 		tree.derive_node(13 as usize, inputs.clone());
 
 		println!("{}", tree);
-		println!("{:?}", tree.get_node_candidates(3));
+		//println!("{:?}", tree.get_node_candidates(3));
 	}
 
 	pub fn solve_expr(&mut self, trace: Traces) {

@@ -201,7 +201,7 @@ impl Tree {
 		Tree {
 			nodes: vec![ Node {
 				exp: "U".to_string(),
-				typ: Symbol::non_terminal,
+				typ: Symbol::intermediate,
 				next: Vec::new(),
 				prev: 0,
 				score: 0.0
@@ -266,11 +266,11 @@ pub struct Synthesis {
 }
 
 impl Synthesis {
-	pub fn walk_tree(inputs: Vec<String>) {
+	pub fn walk_tree(inputs: Vec<String>, registers: Vec<String>) {
 		let mut tree = Tree::init();
-		tree.derive_node(0 as usize, inputs.clone());
-		tree.derive_node(3 as usize, inputs.clone());
-		tree.derive_node(13 as usize, inputs.clone());
+		tree.derive_node(0 as usize, registers.clone());
+		tree.derive_node(3 as usize, registers.clone());
+		tree.derive_node(13 as usize, registers.clone());
 
 		println!("{}", tree);
 		//println!("{:?}", tree.get_node_candidates(3));

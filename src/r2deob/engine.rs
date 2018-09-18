@@ -27,7 +27,7 @@ pub struct FcnConfig {
 
 pub struct Traces {
 	pub inputs: Vec<Vec<u64>>,
-	pub outputs: Vec<u64>
+	pub outputs: Vec<u64>,
 }
 
 impl Traces {
@@ -91,10 +91,11 @@ impl Session {
 
 	pub fn deobfuscate(self, backend: Synthesiser) {
 		let inputs = self.traces.inputs_as_str().get(0).unwrap().clone();
+		let registers = self.fcn_config.input_regs;
 		match backend {
 			Synthesiser::Tree => {
 				//synth_sat::Synthesis::solve_expr(&mut synth_sat::Synthesis {}, self.traces);
-				synth_sat::Synthesis::walk_tree(inputs);
+				synth_sat::Synthesis::walk_tree(inputs, registers);
 			},
 			Synthesiser::LibEvoasm => {
 				println!("not implemented");

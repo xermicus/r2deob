@@ -169,13 +169,12 @@ impl Node {
 
 impl std::fmt::Display for Node {
     fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-		//w.write_str("Node\n");
 		w.write_str("\texpression:\t"); w.write_str(&self.exp);
 		w.write_str("\n\ttype:\t\t"); w.write_str(&self.typ.to_string());
 		w.write_str("\n\tscore:\t\t"); w.write_str(&self.score.to_string());
 		w.write_str("\n\tparent:\t\t"); w.write_str(&self.prev.to_string());
 		w.write_str("\n\tn childs:\t"); w.write_str(&self.next.len().to_string());
-		Ok(())//Ok(w.write_str("\n")?)
+		Ok(())
     }
 }
 
@@ -201,7 +200,7 @@ impl Tree {
 		Tree {
 			nodes: vec![ Node {
 				exp: "U".to_string(),
-				typ: Symbol::non_terminal,
+				typ: Symbol::intermediate,
 				next: Vec::new(),
 				prev: 0,
 				score: 0.0
@@ -224,63 +223,27 @@ impl Tree {
 
 		// Build all representations for a non-terminal
 		let operators = vec!["+","-"];
-		let mut expressions = Vec::new();
+		let mut expressions: Vec<(_,_)> = Vec::new();
 		for i in inputs.iter() {
-			expressions.push(i.to_string());
+			expressions.push((i.to_string(), Symbol::candidate));
 			for o in operators.iter() {
-				expressions.push("U".to_string() + o + "U");
-				expressions.push(i.to_string() + o + "U");
-				expressions.push("U".to_string() + o + &i);
+				expressions.push(("U".to_string() + o + "U", Symbol::intermediate));
+				expressions.push((i.to_string() + o + "U", Symbol::intermediate));
+				expressions.push(("U".to_string() + o + &i, Symbol::intermediate));
 			};
 		};
 
 		// Add new nodes for all combinations of non-terminals and expressions
 		let non_terminal = &self.nodes.get(current_node).unwrap().exp;
-		//let index_nt: Vec<_> = non_terminal.match_indices("U").collect()
 		let index_exp: Vec<(_,_)> = non_terminal.char_indices().collect();
-		for exp in expressions {
-			//for i in inputs.iter() {
-				let mut cand = String::new();
-				for (i, c) in &index_exp {
-					if c == &'U' { cand.push('('); cand.push_str(&exp); cand.push(')'); }
-					else { cand.push(c.clone()); };
-				};
-				self.add_node(current_node, cand, Symbol::intermediate); // determine i or c
-			//};
+		for (exp,typ) in expressions {
+			let mut cand = String::new();
+			for (i, c) in &index_exp {
+				if c == &'U' { cand.push('('); cand.push_str(&exp); cand.push(')'); }
+				else { cand.push(c.clone()); };
+			};
+			self.add_node(current_node, cand, typ); // determine i or c
 		};
-
-		
-		//let tokens = non_terminal.char_indices();
-		//for (i, token) in tokens {
-		//	if token != 'U' { continue };
-
-		//};
-		
-
-		//let operators = vec!["+","-","/","*","&","|","¬"];
-		// TODO: Do this for every U instead for whole theorem
-		// TODO: Refactor
-		//let non_terminal = "(".to_string() + &self.nodes.get(current_node).unwrap().exp + ")";
-		//let tokens = non_terminal.char_indices();
-		//for (i, c) in tokens {
-		//	match c {
-		//		'U' => { 
-		//			for i in inputs.iter() {
-		//				self.add_node(current_node, i.to_string(), Symbol::candidate);
-		//				for o in operators.iter() {
-		//					//nodes.push(U + op + U);
-		//					self.add_node(current_node, non_terminal.clone() + o + &non_terminal.clone(),
-		//						Symbol::intermediate);
-		//					//nodes.push("input".to_string() + op + U);
-		//					self.add_node(current_node, i.to_string() + o + &non_terminal.clone(), Symbol::intermediate);
-		//					//nodes.push(U + op + "input";
-		//					self.add_node(current_node, non_terminal.clone() + o + &i, Symbol::intermediate);
-		//				};
-		//			};
-		//		},
-		//		_ => {},
-		//	};
-		//};
 	}
 
 	fn get_node_candidates(&self, node: usize) -> Vec<String> {
@@ -304,10 +267,6 @@ impl std::fmt::Display for Tree {
 		for n in 0..self.nodes.len() {
 			w.write_str("Node #"); w.write_str(&n.to_string()); w.write_str("\n");
 			w.write_str(&self.nodes[n.clone() as usize].to_string()); w.write_str("\n");
-			//for c in self.nodes[n].next.iter() { 
-			//	w.write_str("Node #"); w.write_str(&c.to_string()); w.write_str("\n");
-			//	w.write_str(&self.nodes[c.clone() as usize].to_string());
-			//};
 		}
 		Ok(())
     }
@@ -322,14 +281,9 @@ impl Synthesis {
 		let mut tree = Tree::init();
 		tree.derive_node(0 as usize, inputs.clone());
 		tree.derive_node(3 as usize, inputs.clone());
-		tree.derive_node(26 as usize, inputs.clone());
+		tree.derive_node(13 as usize, inputs.clone());
 
 		println!("{}", tree);
-		let node18 = tree.nodes.get(3).unwrap();
-		//let node18 = tree.nodes.get(26).unwrap();
-		//println!("{}", node18);
-		//for n in node18.next.iter() { println!("Node #{}\n{}", n, tree.nodes[n.clone()]); };
-
 		println!("{:?}", tree.get_node_candidates(3));
 	}
 

@@ -234,7 +234,12 @@ impl Tree {
 		for (exp,typ) in expressions {
 			let mut cand = String::new();
 			for (i, c) in &index_exp {
-				if c == &'U' { cand.push('('); cand.push_str(&exp); cand.push(')'); }
+				if c == &'U' { 
+					match typ {
+						Symbol::candidate => { cand.push_str(&exp); },
+						_ => { cand.push('('); cand.push_str(&exp); cand.push(')'); }
+					};
+				}
 				else { cand.push(c.clone()); };
 			};
 			self.add_node(current_node, cand, typ);
@@ -242,7 +247,6 @@ impl Tree {
 	}
 
 	fn score_node(&mut self, n: usize, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
-		println!("{:?}",inputs);
 		let mut node = if let Some(val) = self.nodes.get(n) { val } else { return };
 		let mut result: d128 = d128::from(1);
 		
@@ -251,10 +255,29 @@ impl Tree {
 			for (register, value) in inputs[i].clone().iter() {
 				expression = expression.replace(register, value);
 			}
-			println!("{:?}", expression);
+			println!("{}", &expression);
 			result /= eval_score(eval(&expression).unwrap().as_float(), d128::from(outputs[i]));
+			println!("{}", &expression);
 		}
 		self.nodes[n].score = result;
+	}
+
+	fn update_parents(&mut self, n: usize) {
+		let mut parent = self.nodes[n].prev;
+		let mut current = n;
+		loop {
+			if parent == 0 {
+				break;
+			}
+			else if self.nodes[parent].score > d128::from(0) {
+				self.nodes[parent].score *= self.nodes[current].score;
+			}
+			else {
+				self.nodes[parent].score = d128::from(1) * self.nodes[current].score;
+			};
+			current = parent;
+			parent = self.nodes[parent].prev;
+		};
 	}
 }
 
@@ -276,23 +299,22 @@ impl Synthesis {
 	pub fn walk_tree(inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>, registers: Vec<String>) {
 		let mut tree = Tree::init();
 		tree.derive_node(0 as usize, registers.clone());
-		tree.derive_node(3 as usize, registers.clone());
-		tree.derive_node(13 as usize, registers.clone());
-		tree.score_node(22, inputs, outputs);
+		for i in 0..1000 {
+			tree.derive_node(i, registers.clone());
+		}
+		//tree.derive_node(0 as usize, registers.clone());
+		//tree.derive_node(3 as usize, registers.clone());
+		//tree.derive_node(13 as usize, registers.clone());
+		//tree.score_node(22, inputs, outputs);
+		//tree.update_parents(22);
+		tree.score_node(41999, inputs, outputs);
+		tree.update_parents(41999);
 		println!("{}", tree);
-	}
-
-	pub fn solve_expr(&mut self, trace: Traces) {
-		for n in 0..trace.inputs.len() {
-			println!("{:?} ; {:?}", trace.inputs[n], trace.outputs[n]);
-		};
-		demo();
 	}
 }
 
 fn enum_expressions(inputs: Vec<String>) -> Vec<(String,Symbol)> {
-	//let operators = vec!["+","-","*","/","&","|","^"];
-	let operators = vec!["+","-"];
+	let operators = vec!["+","-","*","/","&","|","^"];
 	let mut expressions: Vec<(String,Symbol)> = Vec::new();
 	for i in inputs.iter() {
 		expressions.push((i.to_string(), Symbol::candidate));
@@ -307,8 +329,6 @@ fn enum_expressions(inputs: Vec<String>) -> Vec<(String,Symbol)> {
 
 fn eval_score(result_test: d128, result_true: d128) -> d128 {
 	// TODO for now just the difference
-	println!("test, true = {}, {}", result_test, result_true);
-	println!("result = {}", result_true / result_test);
 	result_true / result_test
 }
 

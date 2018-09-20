@@ -1,6 +1,9 @@
 extern crate calc;
 use calc::eval;
 
+extern crate decimal;
+use decimal::d128;
+
 use rsmt2::SmtRes;
 //use rsmt2::SmtConf;
 use rsmt2::Solver;
@@ -166,7 +169,7 @@ struct Node {
 	typ: Symbol,
 	next: Vec<usize>,
 	prev: usize,
-	score: f32
+	score: d128
 }
 
 impl Node {
@@ -195,7 +198,7 @@ impl Tree {
 			typ: t,
 			next: Vec::new(),
 			prev: c,
-			score: 0.0
+			score: d128::from(0)
 		});
 		let index = self.nodes.len()-1;
 		self.nodes[c].next.push(index);
@@ -208,7 +211,7 @@ impl Tree {
 				typ: Symbol::intermediate,
 				next: Vec::new(),
 				prev: 0,
-				score: 0.0
+				score: d128::from(0)
 			}]
 		}
 	}
@@ -239,17 +242,19 @@ impl Tree {
 	}
 
 	fn score_node(&mut self, n: usize, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
+		println!("{:?}",inputs);
 		let mut node = if let Some(val) = self.nodes.get(n) { val } else { return };
-		let mut result: f32 = 0.0;
+		let mut result: d128 = d128::from(1);
 		
 		for i in 0..inputs.len() {
 			let mut expression = node.exp.clone();
 			for (register, value) in inputs[i].clone().iter() {
-				expression.replace(register, value);
+				expression = expression.replace(register, value);
 			}
-			result += score_eval(expression, outputs[i]);
+			println!("{:?}", expression);
+			result /= eval_score(eval(&expression).unwrap().as_float(), d128::from(outputs[i]));
 		}
-		self.nodes[n].score = result;	
+		self.nodes[n].score = result;
 	}
 }
 
@@ -300,8 +305,11 @@ fn enum_expressions(inputs: Vec<String>) -> Vec<(String,Symbol)> {
 	expressions
 }
 
-fn score_eval(result_cand: String, result_true: u64) -> f32 {
-	1.0
+fn eval_score(result_test: d128, result_true: d128) -> d128 {
+	// TODO for now just the difference
+	println!("test, true = {}, {}", result_test, result_true);
+	println!("result = {}", result_true / result_test);
+	result_true / result_test
 }
 
 // ------------------------

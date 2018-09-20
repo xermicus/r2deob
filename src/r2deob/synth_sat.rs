@@ -239,7 +239,7 @@ impl Tree {
 	}
 
 	fn score_node(&mut self, n: usize, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
-		let node = if let Some(val) = self.nodes.get(n) { val } else { return };
+		let mut node = if let Some(val) = self.nodes.get(n) { val } else { return };
 		let mut result: f32 = 0.0;
 		
 		for i in 0..inputs.len() {
@@ -249,7 +249,7 @@ impl Tree {
 			}
 			result += score_eval(expression, outputs[i]);
 		}
-		println!("{}", result);
+		self.nodes[n].score = result;	
 	}
 }
 
@@ -273,10 +273,8 @@ impl Synthesis {
 		tree.derive_node(0 as usize, registers.clone());
 		tree.derive_node(3 as usize, registers.clone());
 		tree.derive_node(13 as usize, registers.clone());
-
-		println!("{}", tree);
 		tree.score_node(22, inputs, outputs);
-		//println!("{:?}", tree.get_node_candidates(3));
+		println!("{}", tree);
 	}
 
 	pub fn solve_expr(&mut self, trace: Traces) {

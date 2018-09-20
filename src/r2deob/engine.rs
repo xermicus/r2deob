@@ -55,9 +55,6 @@ impl Traces {
 			};
 			result.push(input);
 		};
-		//for i in self.inputs.iter() {
-		//	result.push(i.iter().map(|x| x.to_string()).collect());
-		//};
 		result
 	}
 	

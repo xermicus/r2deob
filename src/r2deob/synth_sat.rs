@@ -235,9 +235,10 @@ impl Tree {
 			let mut cand = String::new();
 			for (i, c) in &index_exp {
 				if c == &'U' { 
+					//cand.push(' ');
 					match typ {
 						Symbol::candidate => { cand.push_str(&exp); },
-						_ => { cand.push('('); cand.push_str(&exp); cand.push(')'); }
+						_ => { cand.push_str("("); cand.push_str(&exp); cand.push_str(")"); }
 					};
 				}
 				else { cand.push(c.clone()); };
@@ -248,6 +249,7 @@ impl Tree {
 
 	fn score_node(&mut self, n: usize, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
 		let mut node = if let Some(val) = self.nodes.get(n) { val } else { return };
+		match node.typ { Symbol::candidate => { },_ => return };
 		let mut result: d128 = d128::from(1);
 		
 		for i in 0..inputs.len() {
@@ -255,9 +257,12 @@ impl Tree {
 			for (register, value) in inputs[i].clone().iter() {
 				expression = expression.replace(register, value);
 			}
-			println!("{}", &expression);
-			result /= eval_score(eval(&expression).unwrap().as_float(), d128::from(outputs[i]));
-			println!("{}", &expression);
+			println!("{}", expression);
+			if let Ok(val) = eval(&expression) {
+				result /= eval_score(val.as_float(), d128::from(outputs[i]));
+			} else {
+				result = d128::from(0);
+			};//result /= eval_score(eval(&expression).unwrap().as_float(), d128::from(outputs[i]));
 		}
 		self.nodes[n].score = result;
 	}
@@ -302,13 +307,16 @@ impl Synthesis {
 		for i in 0..1000 {
 			tree.derive_node(i, registers.clone());
 		}
+		for i in 0..tree.nodes.len() {
+			tree.score_node(i, inputs.clone(), outputs.clone());
+		}
 		//tree.derive_node(0 as usize, registers.clone());
 		//tree.derive_node(3 as usize, registers.clone());
 		//tree.derive_node(13 as usize, registers.clone());
 		//tree.score_node(22, inputs, outputs);
 		//tree.update_parents(22);
-		tree.score_node(41999, inputs, outputs);
-		tree.update_parents(41999);
+		//tree.score_node(41999, inputs, outputs);
+		//tree.update_parents(41999);
 		println!("{}", tree);
 	}
 }
@@ -320,7 +328,7 @@ fn enum_expressions(inputs: Vec<String>) -> Vec<(String,Symbol)> {
 		expressions.push((i.to_string(), Symbol::candidate));
 		for o in operators.iter() {
 			expressions.push(("U".to_string() + o + "U", Symbol::intermediate));
-			expressions.push((i.to_string() + o + "U", Symbol::intermediate));
+			expressions.push((i.to_string() +  o + "U", Symbol::intermediate));
 			expressions.push(("U".to_string() + o + &i, Symbol::intermediate));
 		};
 	};

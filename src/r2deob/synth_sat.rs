@@ -1,8 +1,10 @@
+extern crate calc;
 use rsmt2::SmtRes;
 //use rsmt2::SmtConf;
 use rsmt2::Solver;
 use rsmt2::parse::IdentParser;
 use rsmt2::parse::ModelParser;
+use calc::eval;
 
 use super::engine::Traces;
 
@@ -234,20 +236,20 @@ impl Tree {
 		};
 	}
 
-	// TODO: Remove or change
-	fn get_node_candidates(&self, node: usize) -> Vec<String> {
-		match &self.nodes[node].typ {
-			Symbol::candidate => return vec![self.nodes[node].exp.clone()],
-			Symbol::intermediate => {
-				let mut candidates = Vec::new();
-				for n in self.nodes.get(node).unwrap().next.iter() {
-					candidates.append(&mut self.get_node_candidates(n.clone() as usize));
-				};
-				return candidates
-			},
-			_ => { println!("ERROR wrong node type for playout"); }
+	fn score_node(&mut self, node: usize, input_regs: Vec<String>, inputs: Vec<Vec<String>>, outputs: Vec<u64>) {
+		let expression = &self.nodes.get(node).unwrap().exp;
+		match self.nodes.get(node).unwrap().typ {
+			Symbol::candidate => {},
+			_ => return
+		};
+		let mut result: f32 = 0.0;
+		for i in input_regs.iter() {
+			//let result = eval(expression).unwrap();
+			for input in inputs.iter() {
+				result += score_eval(input[0].to_string(), outputs[0].to_string());
+				println!("{} = {}", expression, result);
+			};
 		}
-		Vec::new() 
 	}
 }
 
@@ -266,13 +268,14 @@ pub struct Synthesis {
 }
 
 impl Synthesis {
-	pub fn walk_tree(inputs: Vec<String>, registers: Vec<String>) {
+	pub fn walk_tree(inputs: Vec<Vec<String>>, outputs: Vec<u64>, registers: Vec<String>) {
 		let mut tree = Tree::init();
 		tree.derive_node(0 as usize, registers.clone());
 		tree.derive_node(3 as usize, registers.clone());
 		tree.derive_node(13 as usize, registers.clone());
 
 		println!("{}", tree);
+		tree.score_node(22, registers, inputs, outputs);
 		//println!("{:?}", tree.get_node_candidates(3));
 	}
 
@@ -285,6 +288,7 @@ impl Synthesis {
 }
 
 fn enum_expressions(inputs: Vec<String>) -> Vec<(String,Symbol)> {
+	//let operators = vec!["+","-","*","/","&","|","^"];
 	let operators = vec!["+","-"];
 	let mut expressions: Vec<(String,Symbol)> = Vec::new();
 	for i in inputs.iter() {
@@ -296,6 +300,10 @@ fn enum_expressions(inputs: Vec<String>) -> Vec<(String,Symbol)> {
 		};
 	};
 	expressions
+}
+
+fn score_eval(result_cand: String, result_true: String) -> f32 {
+	1.0
 }
 
 // ------------------------

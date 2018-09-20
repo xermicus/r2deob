@@ -6,6 +6,8 @@ use rand::prelude::random;
 
 use super::synth_sat;
 
+use std::collections::HashMap;
+
 pub enum Synthesiser {
 	Tree,
 	LibEvoasm
@@ -37,14 +39,22 @@ impl Traces {
 		Ok(())
 	}
 
-	pub fn inputs_as_str(&self) -> Vec<Vec<String>>{
+	pub fn inputs_as_str(&self) -> Vec<Vec<String>> {
 		let mut result: Vec<Vec<String>> = Vec::new();
 		for i in self.inputs.iter() {
 			result.push(i.iter().map(|x| x.to_string()).collect());
 		};
 		result
 	}
-
+	
+	pub fn outputs_as_str(&self) -> Vec<String> {
+		let mut result: Vec<String> = Vec::new();
+		for i in self.outputs.iter() {
+			result.push(i.to_string());
+			//result.push(i.iter().map(|x| x.to_string()).collect());
+		};
+		result
+	}
 }
 
 impl Session {
@@ -90,12 +100,13 @@ impl Session {
 	}
 
 	pub fn deobfuscate(self, backend: Synthesiser) {
-		let inputs = self.traces.inputs_as_str().get(0).unwrap().clone();
+		let inputs = self.traces.inputs_as_str();
+		let outputs = self.traces.outputs;
 		let registers = self.fcn_config.input_regs;
 		match backend {
 			Synthesiser::Tree => {
 				//synth_sat::Synthesis::solve_expr(&mut synth_sat::Synthesis {}, self.traces);
-				synth_sat::Synthesis::walk_tree(inputs, registers);
+				synth_sat::Synthesis::walk_tree(inputs, outputs, registers);
 			},
 			Synthesiser::LibEvoasm => {
 				println!("not implemented");

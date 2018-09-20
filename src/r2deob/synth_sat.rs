@@ -257,7 +257,7 @@ impl Tree {
 			for (register, value) in inputs[i].clone().iter() {
 				expression = expression.replace(register, value);
 			}
-			println!("{}", expression);
+			//println!("{}", expression);
 			if let Ok(val) = eval(&expression) {
 				result /= eval_score(val.as_float(), d128::from(outputs[i]));
 			} else {
@@ -309,6 +309,8 @@ impl Synthesis {
 		}
 		for i in 0..tree.nodes.len() {
 			tree.score_node(i, inputs.clone(), outputs.clone());
+			tree.update_parents(i);
+			if tree.nodes[i].score == d128::from(1) { println!("Winner! {}", tree.nodes[i].exp); };
 		}
 		//tree.derive_node(0 as usize, registers.clone());
 		//tree.derive_node(3 as usize, registers.clone());
@@ -317,7 +319,7 @@ impl Synthesis {
 		//tree.update_parents(22);
 		//tree.score_node(41999, inputs, outputs);
 		//tree.update_parents(41999);
-		println!("{}", tree);
+		//println!("{}", tree);
 	}
 }
 

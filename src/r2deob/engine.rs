@@ -28,22 +28,36 @@ pub struct FcnConfig {
 }
 
 pub struct Traces {
-	pub inputs: Vec<Vec<u64>>,
+	pub inputs: Vec<HashMap<String,u64>>,
 	pub outputs: Vec<u64>,
 }
 
 impl Traces {
-	pub fn push_strings(&mut self, input: Vec<String>, output: String) -> Result<(), String> {
-		self.inputs.push(input.iter().map(|x| x.parse().unwrap()).collect());
+	pub fn push_strings(&mut self, registers: Vec<String>, input: Vec<String>, output: String) -> Result<(), String> {
+		if registers.len() != input.len() { return Err("expected one input for each register".to_string()) };
+
+		//let mut inputs = input.iter().map(|x| x.parse().unwrap()).collect();
+		let mut inputs = HashMap::new();
+		for i in 0..registers.len() {
+			inputs.insert(registers[i].clone(), input[i].parse().unwrap());
+		};
+		self.inputs.push(inputs);
 		self.outputs.push(output.parse().unwrap());
 		Ok(())
 	}
 
-	pub fn inputs_as_str(&self) -> Vec<Vec<String>> {
-		let mut result: Vec<Vec<String>> = Vec::new();
+	pub fn inputs_as_str(&self) -> Vec<HashMap<String,String>> {
+		let mut result: Vec<HashMap<String,String>> = Vec::new();
 		for i in self.inputs.iter() {
-			result.push(i.iter().map(|x| x.to_string()).collect());
+			let mut input: HashMap<String,String> = HashMap::new();
+			for (key, val) in i.clone().iter_mut() {
+				input.insert(key.to_string(), val.to_string());
+			};
+			result.push(input);
 		};
+		//for i in self.inputs.iter() {
+		//	result.push(i.iter().map(|x| x.to_string()).collect());
+		//};
 		result
 	}
 	
@@ -95,17 +109,17 @@ impl Session {
 		let output = self.r2.cmdj("aerj")?[reg].to_string();
 		let result = output.clone();
 
-		if let Ok(_) = self.traces.push_strings(input, output) { return Ok(result) };
+		let registers = self.fcn_config.input_regs.clone();
+		if let Ok(_) = self.traces.push_strings(registers, input, output) { return Ok(result) };
 		Err(String::new())
 	}
 
 	pub fn deobfuscate(self, backend: Synthesiser) {
 		let inputs = self.traces.inputs_as_str();
 		let outputs = self.traces.outputs;
-		let registers = self.fcn_config.input_regs;
+		let registers = self.fcn_config.input_regs.clone();
 		match backend {
 			Synthesiser::Tree => {
-				//synth_sat::Synthesis::solve_expr(&mut synth_sat::Synthesis {}, self.traces);
 				synth_sat::Synthesis::walk_tree(inputs, outputs, registers);
 			},
 			Synthesiser::LibEvoasm => {

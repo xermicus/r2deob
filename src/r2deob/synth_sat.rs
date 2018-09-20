@@ -1,10 +1,13 @@
 extern crate calc;
+use calc::eval;
+
 use rsmt2::SmtRes;
 //use rsmt2::SmtConf;
 use rsmt2::Solver;
 use rsmt2::parse::IdentParser;
 use rsmt2::parse::ModelParser;
-use calc::eval;
+
+use std::collections::HashMap;
 
 use super::engine::Traces;
 
@@ -131,7 +134,6 @@ impl ::std::fmt::Display for Op {
 #[derive(Copy, Clone)]
 enum Symbol {
 	non_terminal,
- 	//input,
 	constant,
 	intermediate,
 	candidate
@@ -236,20 +238,18 @@ impl Tree {
 		};
 	}
 
-	fn score_node(&mut self, node: usize, input_regs: Vec<String>, inputs: Vec<Vec<String>>, outputs: Vec<u64>) {
-		let expression = &self.nodes.get(node).unwrap().exp;
-		match self.nodes.get(node).unwrap().typ {
-			Symbol::candidate => {},
-			_ => return
-		};
+	fn score_node(&mut self, n: usize, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
+		let node = if let Some(val) = self.nodes.get(n) { val } else { return };
 		let mut result: f32 = 0.0;
-		for i in input_regs.iter() {
-			//let result = eval(expression).unwrap();
-			for input in inputs.iter() {
-				result += score_eval(input[0].to_string(), outputs[0].to_string());
-				println!("{} = {}", expression, result);
-			};
+		
+		for i in 0..inputs.len() {
+			let mut expression = node.exp.clone();
+			for (register, value) in inputs[i].clone().iter() {
+				expression.replace(register, value);
+			}
+			result += score_eval(expression, outputs[i]);
 		}
+		println!("{}", result);
 	}
 }
 
@@ -268,14 +268,14 @@ pub struct Synthesis {
 }
 
 impl Synthesis {
-	pub fn walk_tree(inputs: Vec<Vec<String>>, outputs: Vec<u64>, registers: Vec<String>) {
+	pub fn walk_tree(inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>, registers: Vec<String>) {
 		let mut tree = Tree::init();
 		tree.derive_node(0 as usize, registers.clone());
 		tree.derive_node(3 as usize, registers.clone());
 		tree.derive_node(13 as usize, registers.clone());
 
 		println!("{}", tree);
-		tree.score_node(22, registers, inputs, outputs);
+		tree.score_node(22, inputs, outputs);
 		//println!("{:?}", tree.get_node_candidates(3));
 	}
 
@@ -302,7 +302,7 @@ fn enum_expressions(inputs: Vec<String>) -> Vec<(String,Symbol)> {
 	expressions
 }
 
-fn score_eval(result_cand: String, result_true: String) -> f32 {
+fn score_eval(result_cand: String, result_true: u64) -> f32 {
 	1.0
 }
 

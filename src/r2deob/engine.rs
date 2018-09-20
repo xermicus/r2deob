@@ -4,7 +4,7 @@ use r2pipe::R2Pipe;
 extern crate rand;
 use rand::prelude::random;
 
-use super::synth_sat;
+use super::synth_tree;
 
 use std::collections::HashMap;
 
@@ -117,7 +117,7 @@ impl Session {
 		let registers = self.fcn_config.input_regs.clone();
 		match backend {
 			Synthesiser::Tree => {
-				synth_sat::Synthesis::walk_tree(inputs, outputs, registers);
+				synth_tree::Synthesis::walk_tree(inputs, outputs, registers);
 			},
 			Synthesiser::LibEvoasm => {
 				println!("not implemented");

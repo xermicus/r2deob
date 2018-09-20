@@ -78,7 +78,6 @@ impl Tree {
 			let mut cand = String::new();
 			for (i, c) in &index_exp {
 				if c == &'U' { 
-					//cand.push(' ');
 					match typ {
 						Symbol::candidate => { cand.push_str(&exp); },
 						_ => { cand.push_str("("); cand.push_str(&exp); cand.push_str(")"); }
@@ -163,8 +162,7 @@ fn enum_expressions(inputs: Vec<String>) -> Vec<(String,Symbol)> {
 }
 
 fn eval_score(result_test: d128, result_true: d128) -> d128 {
-	// TODO for now just the difference
-	result_true / result_test
+	result_true / result_test // TODO for now just the difference
 }
 
 impl std::fmt::Display for Tree {
@@ -228,6 +226,7 @@ pub fn demo() {
 	}
 }
 // ------------------------
+
 /// Empty parser structure, we will not maintain any context.
 #[derive(Clone, Copy)]
 pub struct Parser;

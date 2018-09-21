@@ -96,7 +96,7 @@ impl Tree {
 	fn score_node(&mut self, n: usize, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
 		let mut node = if let Some(val) = self.nodes.get(n) { val } else { return };
 		match node.typ { Symbol::candidate => { },_ => return };
-		let mut result: d128 = d128::from(1);
+		let mut result: d128 = d128::from(0);
 		
 		for i in 0..inputs.len() {
 			let mut expression = node.exp.clone();
@@ -104,9 +104,9 @@ impl Tree {
 				expression = expression.replace(register, value);
 			}
 			if let Ok(val) = eval(&expression) {
-				result = eval_score(val.as_float(), d128::from(outputs[i]));
+				result += eval_score(val.as_float(), d128::from(outputs[i]));
 			} else {
-				return // TODO result = d128::from(0);
+				return // TODO obviously something to handle
 			};
 		}
 		self.nodes[n].score = Some(result);
@@ -127,12 +127,6 @@ impl Tree {
 					self.nodes[parent].score = Some(score_current);
 				}
 			}
-			//else if self.nodes[parent].score > d128::from(0) {
-			//	self.nodes[parent].score *= self.nodes[current].score;
-			//}
-			//else {
-			//	self.nodes[parent].score = d128::from(1) * self.nodes[current].score;
-			//};
 			current = parent;
 			parent = self.nodes[parent].prev;
 		};
@@ -153,11 +147,11 @@ impl Synthesis {
 		for i in 0..tree.nodes.len() {
 			tree.score_node(i, inputs.clone(), outputs.clone());
 			if let Some(score) = tree.nodes[i].score {
-				if score < d128::from(1) { println!("Winner! {}", tree.nodes[i].exp); break; };
+				if score < d128::from(1) { println!("Winner! {}", tree.nodes[i].exp); };
 			};
 			tree.update_parents(i);
 		}
-		//println!("{}", tree);
+		println!("{}", tree);
 	}
 }
 
@@ -179,9 +173,9 @@ fn eval_score(result_test: d128, result_true: d128) -> d128 {
 	let bytes_test = result_test.to_raw_bytes();
 	let bytes_true = result_true.to_raw_bytes();
 	for i in 0..16 {
-		if bytes_test[i] != bytes_true[i] {
+		//if bytes_test[i] != bytes_true[i] {
 			result += hamming_distance(bytes_test[i] as u64, bytes_true[i] as u64);
-		}
+		//}
 	}
 	d128::from(result)
 }
@@ -200,7 +194,7 @@ impl std::fmt::Display for Node {
     fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
 		w.write_str("\texpression:\t"); w.write_str(&self.exp);
 		w.write_str("\n\ttype:\t\t"); w.write_str(&self.typ.to_string());
-		w.write_str("\n\tscore:\t\t"); w.write_str(&self.score.unwrap().to_string());
+		w.write_str("\n\tscore:\t\t"); if let Some(score) = &self.score { w.write_str(&score.to_string()); }
 		w.write_str("\n\tparent:\t\t"); w.write_str(&self.prev.to_string());
 		w.write_str("\n\tn childs:\t"); w.write_str(&self.next.len().to_string());
 		Ok(())

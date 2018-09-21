@@ -121,7 +121,7 @@ impl Tree {
 			}
 			if let Some(score_current) = self.nodes[current].score {
 				if let Some(score_prev) = self.nodes[parent].score {
-					self.nodes[parent].score = Some(score_prev * score_current);
+					self.nodes[parent].score = Some(score_prev + score_current);
 				}
 				else {
 					self.nodes[parent].score = Some(score_current);
@@ -173,9 +173,7 @@ fn eval_score(result_test: d128, result_true: d128) -> d128 {
 	let bytes_test = result_test.to_raw_bytes();
 	let bytes_true = result_true.to_raw_bytes();
 	for i in 0..16 {
-		//if bytes_test[i] != bytes_true[i] {
-			result += hamming_distance(bytes_test[i] as u64, bytes_true[i] as u64);
-		//}
+		result += hamming_distance(bytes_test[i] as u64, bytes_true[i] as u64);
 	}
 	d128::from(result)
 }

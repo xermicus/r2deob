@@ -151,7 +151,7 @@ impl Synthesis {
 			};
 			tree.update_parents(i);
 		}
-		println!("{}", tree);
+		//println!("{}", tree);
 	}
 }
 
@@ -172,7 +172,7 @@ fn eval_score(result_test: d128, result_true: d128) -> d128 {
 	let mut result: u32 = 0;
 	let bytes_test = result_test.to_raw_bytes();
 	let bytes_true = result_true.to_raw_bytes();
-	for i in 0..16 {
+	for i in 0..8 { // TODO for now we only care about 64b
 		result += hamming_distance(bytes_test[i] as u64, bytes_true[i] as u64);
 	}
 	d128::from(result)

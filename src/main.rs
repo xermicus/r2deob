@@ -12,7 +12,7 @@ fn main() {
 
 	let mut session = r2deob::engine::Session::init(target).unwrap();
 
-	for _ in 0..10 { session.add_trace(); };
+	for _ in 0..20 { session.add_trace(); };
 	
 	session.deobfuscate(r2deob::engine::Synthesiser::Tree);
 }

@@ -4,6 +4,9 @@ use calc::eval;
 extern crate decimal;
 use decimal::d128;
 
+extern crate simhash;
+use simhash::hamming_distance;
+
 use rsmt2::SmtRes;
 //use rsmt2::SmtConf;
 use rsmt2::Solver;
@@ -27,7 +30,7 @@ struct Node {
 	typ: Symbol,
 	next: Vec<usize>,
 	prev: usize,
-	score: d128
+	score: Option<d128>
 }
 
 #[derive(Debug)]
@@ -43,7 +46,7 @@ impl Tree {
 				typ: Symbol::intermediate,
 				next: Vec::new(),
 				prev: 0,
-				score: d128::from(0)
+				score: None//d128::from(0)
 			}]
 		}
 	}
@@ -54,7 +57,7 @@ impl Tree {
 			typ: t,
 			next: Vec::new(),
 			prev: c,
-			score: d128::from(0)
+			score: None//d128::from(0)
 		});
 		let index = self.nodes.len()-1;
 		self.nodes[c].next.push(index);
@@ -101,12 +104,12 @@ impl Tree {
 				expression = expression.replace(register, value);
 			}
 			if let Ok(val) = eval(&expression) {
-				result /= eval_score(val.as_float(), d128::from(outputs[i]));
+				result = eval_score(val.as_float(), d128::from(outputs[i]));
 			} else {
-				result = d128::from(0);
+				return // TODO result = d128::from(0);
 			};
 		}
-		self.nodes[n].score = result;
+		self.nodes[n].score = Some(result);
 	}
 
 	fn update_parents(&mut self, n: usize) {
@@ -116,12 +119,20 @@ impl Tree {
 			if parent == 0 {
 				break;
 			}
-			else if self.nodes[parent].score > d128::from(0) {
-				self.nodes[parent].score *= self.nodes[current].score;
+			if let Some(score_current) = self.nodes[current].score {
+				if let Some(score_prev) = self.nodes[parent].score {
+					self.nodes[parent].score = Some(score_prev * score_current);
+				}
+				else {
+					self.nodes[parent].score = Some(score_current);
+				}
 			}
-			else {
-				self.nodes[parent].score = d128::from(1) * self.nodes[current].score;
-			};
+			//else if self.nodes[parent].score > d128::from(0) {
+			//	self.nodes[parent].score *= self.nodes[current].score;
+			//}
+			//else {
+			//	self.nodes[parent].score = d128::from(1) * self.nodes[current].score;
+			//};
 			current = parent;
 			parent = self.nodes[parent].prev;
 		};
@@ -141,8 +152,10 @@ impl Synthesis {
 		}
 		for i in 0..tree.nodes.len() {
 			tree.score_node(i, inputs.clone(), outputs.clone());
+			if let Some(score) = tree.nodes[i].score {
+				if score < d128::from(1) { println!("Winner! {}", tree.nodes[i].exp); break; };
+			};
 			tree.update_parents(i);
-			if tree.nodes[i].score == d128::from(1) { println!("Winner! {}", tree.nodes[i].exp); break; };
 		}
 		//println!("{}", tree);
 	}
@@ -152,7 +165,7 @@ fn enum_expressions(inputs: Vec<String>) -> Vec<(String,Symbol)> {
 	let mut expressions: Vec<(String,Symbol)> = Vec::new();
 	for input in inputs.iter() {
 		expressions.push((input.to_string(), Symbol::candidate));
-		for operation in ["+","-","*","/","&","|","^"].iter() {
+		for operation in ["+","-","*","/","&","|","^","%"].iter() {
 			expressions.push(("U".to_string() + operation + "U", Symbol::intermediate));
 			expressions.push((input.to_string() +  operation + "U", Symbol::intermediate));
 			expressions.push(("U".to_string() + operation + &input, Symbol::intermediate));
@@ -162,7 +175,15 @@ fn enum_expressions(inputs: Vec<String>) -> Vec<(String,Symbol)> {
 }
 
 fn eval_score(result_test: d128, result_true: d128) -> d128 {
-	result_true / result_test // TODO for now just the difference
+	let mut result: u32 = 0;
+	let bytes_test = result_test.to_raw_bytes();
+	let bytes_true = result_true.to_raw_bytes();
+	for i in 0..16 {
+		if bytes_test[i] != bytes_true[i] {
+			result += hamming_distance(bytes_test[i] as u64, bytes_true[i] as u64);
+		}
+	}
+	d128::from(result)
 }
 
 impl std::fmt::Display for Tree {
@@ -179,16 +200,14 @@ impl std::fmt::Display for Node {
     fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
 		w.write_str("\texpression:\t"); w.write_str(&self.exp);
 		w.write_str("\n\ttype:\t\t"); w.write_str(&self.typ.to_string());
-		w.write_str("\n\tscore:\t\t"); w.write_str(&self.score.to_string());
+		w.write_str("\n\tscore:\t\t"); w.write_str(&self.score.unwrap().to_string());
 		w.write_str("\n\tparent:\t\t"); w.write_str(&self.prev.to_string());
 		w.write_str("\n\tn childs:\t"); w.write_str(&self.next.len().to_string());
 		Ok(())
     }
 }
 
-impl std::fmt::Display for Symbol {
-    fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        w.write_str(match *self {
+impl std::fmt::Display for Symbol { fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result { w.write_str(match *self {
 			Symbol::non_terminal => "U",
 			Symbol::constant => "C",
 			Symbol::intermediate => "Intermediate",
@@ -214,16 +233,16 @@ pub fn demo() {
 	
 	solver.declare_const("n", "Int").unwrap();
 	solver.declare_const("m", "Int").unwrap();
-	let expression = "(= (+ (* n n) (* m m)) 9)";
+	let expression = "(= (+ (* n n) (* m m)) 7)";
 	solver.assert(&expression).unwrap();
-	solver.check_sat().expect("expected true expression");
-	
-	let model = solver.get_model_const().expect("while getting model");
-
-	println!("Model for expression: {}", &expression);
-	for (ident, typ, value) in model {
-		println!("{}: {} = {}",ident,typ,value);
-	}
+	if let Ok(_) = solver.check_sat() {
+			if let Ok(model) = solver.get_model_const() {
+			println!("Model for expression: {}", &expression);
+			for (ident, typ, value) in model {
+				println!("{}: {} = {}",ident,typ,value);
+			}
+		};
+	};
 }
 // ------------------------
 

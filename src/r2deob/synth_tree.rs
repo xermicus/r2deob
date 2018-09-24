@@ -94,7 +94,7 @@ impl Tree {
 
 	// TODO: Add function to solve intermediate with a constant C
 	fn score_node(&mut self, n: usize, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
-		let mut node = if let Some(val) = self.nodes.get(n) { val } else { return };
+		let node = if let Some(val) = self.nodes.get(n) { val } else { return };
 		match node.typ { Symbol::candidate => { },_ => return };
 		let mut result: d128 = d128::from(0);
 		
@@ -139,15 +139,20 @@ pub struct Synthesis {
 
 impl Synthesis {
 	pub fn walk_tree(inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>, registers: Vec<String>) {
+		// TODO
+	}
+
+	pub fn brute_force(inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>, registers: Vec<String>, 
+	iterations: usize) {
 		let mut tree = Tree::init();
 		tree.derive_node(0 as usize, registers.clone());
-		for i in 0..1000 {
+		for i in 0..iterations {
 			tree.derive_node(i, registers.clone());
 		}
 		for i in 0..tree.nodes.len() {
 			tree.score_node(i, inputs.clone(), outputs.clone());
 			if let Some(score) = tree.nodes[i].score {
-				if score < d128::from(1) { println!("Winner! {}", tree.nodes[i].exp); };
+				if score < d128::from(1) { println!("Winner! {}", tree.nodes[i].exp); return };
 			};
 			tree.update_parents(i);
 		}

@@ -117,7 +117,7 @@ impl Session {
 		let registers = self.fcn_config.input_regs.clone();
 		match backend {
 			Synthesiser::Tree => {
-				synth_tree::Synthesis::walk_tree(inputs, outputs, registers);
+				synth_tree::Synthesis::brute_force(inputs, outputs, registers, 1000);
 			},
 			Synthesiser::LibEvoasm => {
 				println!("not implemented");

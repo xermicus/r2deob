@@ -1,4 +1,3 @@
-extern crate rsmt2;
 mod r2deob;
 
 fn main() {
@@ -11,8 +10,6 @@ fn main() {
 	};
 
 	let mut session = r2deob::engine::Session::init(target).unwrap();
-
-	for _ in 0..10 { session.add_trace(); };
-	
+	for _ in 0..10 { let _result = session.add_trace(); };
 	session.deobfuscate(r2deob::engine::Synthesiser::Tree);
 }

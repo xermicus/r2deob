@@ -74,11 +74,8 @@ impl Session {
 		let mut r2pipe = if let Ok(pipe) = R2Pipe::spawn(&fcn.path, None) { pipe }
 		else { return Err(R2Error::PipeFail) };
 
-		if let Ok(_) = r2pipe.cmd("aaa") {} 
+		if let Ok(_) = r2pipe.cmd("aaa;aei;aeim") {} 
 		else { return Err(R2Error::CmdFail) };
-
-		// Init esil
-		let _res = r2pipe.cmd("aei;aeim");
 		
 		Ok(Session {
 			r2: r2pipe,

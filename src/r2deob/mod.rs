@@ -4,6 +4,7 @@ pub mod synth_evoasm;
 
 pub enum R2Error {
 	PipeFail,
+	AnalFail,
 	CmdFail,
 }
 

@@ -5,6 +5,7 @@ extern crate rand;
 use rand::prelude::random;
 
 use super::synth_tree;
+use super::R2Error;
 
 use std::collections::HashMap;
 
@@ -58,21 +59,23 @@ impl Traces {
 		result
 	}
 	
-	pub fn outputs_as_str(&self) -> Vec<String> {
-		let mut result: Vec<String> = Vec::new();
-		for i in self.outputs.iter() {
-			result.push(i.to_string());
-			//result.push(i.iter().map(|x| x.to_string()).collect());
-		};
-		result
-	}
+	//pub fn outputs_as_str(&self) -> Vec<String> {
+	//	let mut result: Vec<String> = Vec::new();
+	//	for i in self.outputs.iter() {
+	//		result.push(i.to_string());
+	//	};
+	//	result
+	//}
 }
 
 impl Session {
 	// Spawn r2pipe, init esil
-	pub fn init(fcn: FcnConfig) -> Result<Session, String> {
-		let mut r2pipe = R2Pipe::spawn(&fcn.path, None)?;
-		let _anal = r2pipe.cmd("aaa")?;
+	pub fn init(fcn: FcnConfig) -> Result<Session, R2Error> {
+		let mut r2pipe = if let Ok(pipe) = R2Pipe::spawn(&fcn.path, None) { pipe }
+		else { return Err(R2Error::PipeFail) };
+
+		if let Ok(_) = r2pipe.cmd("aaa") {} 
+		else { return Err(R2Error::CmdFail) };
 
 		// Init esil
 		let _res = r2pipe.cmd("aei;aeim");

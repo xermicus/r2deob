@@ -9,7 +9,8 @@ fn main() {
 		output_reg: "rax".to_string()
 	};
 
-	let mut session = r2deob::engine::Session::init(target).unwrap();
-	for _ in 0..10 { let _result = session.add_trace(); };
-	session.deobfuscate(r2deob::engine::Synthesiser::Tree);
+	if let Ok(mut session) = r2deob::engine::Session::init(target) {
+		for _ in 0..10 { let _result = session.add_trace(); };
+		session.deobfuscate(r2deob::engine::Synthesiser::Tree);
+	}
 }

@@ -126,24 +126,17 @@ impl Tree {
 		};
 	}
 
-	fn update_queue(&mut self, n:usize) {
-		let mut copy: Vec<usize> = vec![n];
-		for i in self.queue.iter() {
-			if let Some(i_score) = self.nodes[*i].score {
-				for e in 0..copy.len() {
-					if let Some(e_score) = self.nodes[copy[e]].score {
-						if i_score < e_score {
-							copy.insert(e, *i);
-							break;
-						}
-					}
-					if e >= copy.len() -1 {
-						copy.push(*i);
-					}
-				}
+	fn update_queue(&mut self) {
+		let mut copy: Vec<(usize,u32)> = Vec::new();
+		for i in self.nodes.iter() {
+			if let Some(score) = i.score {
+				copy.push((i.index.clone(), score.into()));
+			} else {
+				copy.push((i.index.clone(), 1000));
 			}
 		}
-		self.queue = copy;
+		copy.sort_by(|a, b| a.1.cmp(&b.1));
+		self.queue = copy.iter().map(|s| s.0).collect();
 	}
 }
 
@@ -164,6 +157,8 @@ impl Synthesis {
 			if let Some(score) = tree.nodes[i].score {
 				if score < d128::from(1) {
 					println!("Winner! {}", tree.nodes[i].exp);
+					//println!("{:?}", tree.queue);
+					//println!("{}", tree.nodes[i]);
 					return
 				};
 			};
@@ -171,36 +166,28 @@ impl Synthesis {
 		}
 	}
 
-	pub fn _brute_force(inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>, registers: Vec<String>, 
-	iterations: usize) {
+	pub fn hamming_score(inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>, registers: Vec<String>) {
 		let mut tree = Tree::init();
 		tree.derive_node(0 as usize, registers.clone());
-		for i in 0..tree.nodes.len() {
-			tree.score_node(i, inputs.clone(), outputs.clone());
-			tree.update_parents(i);
-			tree.update_queue(i);
-		}
-
-		let mut counter: usize = 0;
+		tree.update_queue();
 		loop {
 			for i in tree.queue.clone().iter() {
+				tree.derive_node(*i, registers.clone());
 				for n in tree.nodes[*i].next.clone().iter() {
 					tree.score_node(*n, inputs.clone(), outputs.clone());
-					tree.update_parents(*n);
-					tree.update_queue(*n);
 					if let Some(score) = tree.nodes[*n].score {
-						if score < d128::from(1) { println!("Winner! {}", tree.nodes[*n].exp);
+						if score < d128::from(1) {
+							println!("Winner! {}", tree.nodes[*n].exp);
 							println!("{:?}", tree.queue);
+							println!("{}", tree.nodes[*n]);
 							return
 						};
 					};
+					tree.update_parents(*n);
+					tree.update_queue();
 				}
 			}
-			println!("{:?}", tree.queue);
-			counter += 1;
-			if counter >= iterations { println!("error: failed after {} iterations!", counter); break; }
 		}
-		println!("{:?}", tree.queue);
 	}
 }
 

@@ -10,7 +10,8 @@ use super::R2Error;
 use std::collections::HashMap;
 
 pub enum Synthesiser {
-	Tree,
+	BruteForce,
+	HammingScore,
 	LibEvoasm
 }
 
@@ -115,8 +116,11 @@ impl Session {
 		let outputs = self.traces.outputs;
 		let registers = self.fcn_config.input_regs.clone();
 		match backend {
-			Synthesiser::Tree => {
+			Synthesiser::BruteForce => {
 				synth_tree::Synthesis::brute_force(inputs, outputs, registers, 1000);
+			},
+			Synthesiser::HammingScore => {
+				synth_tree::Synthesis::hamming_score(inputs, outputs, registers);
 			},
 			Synthesiser::LibEvoasm => {
 				println!("not implemented");

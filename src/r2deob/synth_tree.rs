@@ -18,6 +18,7 @@ enum Symbol {
 struct Node {
 	exp: String,
 	typ: Symbol,
+	index: usize,
 	next: Vec<usize>,
 	prev: usize,
 	score: Option<d128>
@@ -26,6 +27,7 @@ struct Node {
 #[derive(Debug)]
 struct Tree {
 	nodes: Vec<Node>,
+	queue: Vec<usize>
 }
 
 impl Tree {
@@ -34,23 +36,26 @@ impl Tree {
 			nodes: vec![ Node {
 				exp: "U".to_string(),
 				typ: Symbol::Intermediate,
+				index: 0,
 				next: Vec::new(),
 				prev: 0,
 				score: None//d128::from(0)
-			}]
+			}],
+			queue: Vec::new()
 		}
 	}
 
 	fn add_node(&mut self, c: usize, e: String, t: Symbol) {
+		let pos = self.nodes.len();
 		self.nodes.push(Node {
 			exp: e,
 			typ: t,
+			index: pos,
 			next: Vec::new(),
 			prev: c,
 			score: None//d128::from(0)
 		});
-		let index = self.nodes.len()-1;
-		self.nodes[c].next.push(index);
+		self.nodes[c].next.push(pos);
 	}
 
 	fn derive_node(&mut self, current_node: usize, inputs: Vec<String>) {
@@ -120,6 +125,26 @@ impl Tree {
 			parent = self.nodes[parent].prev;
 		};
 	}
+
+	fn update_queue(&mut self, n:usize) {
+		let mut copy: Vec<usize> = vec![n];
+		for i in self.queue.iter() {
+			if let Some(i_score) = self.nodes[*i].score {
+				for e in 0..copy.len() {
+					if let Some(e_score) = self.nodes[copy[e]].score {
+						if i_score < e_score {
+							copy.insert(e, *i);
+							break;
+						}
+					}
+					if e >= copy.len() -1 {
+						copy.push(*i);
+					}
+				}
+			}
+		}
+		self.queue = copy;
+	}
 }
 
 pub struct Synthesis {
@@ -137,11 +162,45 @@ impl Synthesis {
 		for i in 0..tree.nodes.len() {
 			tree.score_node(i, inputs.clone(), outputs.clone());
 			if let Some(score) = tree.nodes[i].score {
-				if score < d128::from(1) { println!("Winner! {}", tree.nodes[i].exp); return };
+				if score < d128::from(1) {
+					println!("Winner! {}", tree.nodes[i].exp);
+					return
+				};
 			};
 			tree.update_parents(i);
 		}
-		//println!("{}", tree);
+	}
+
+	pub fn _brute_force(inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>, registers: Vec<String>, 
+	iterations: usize) {
+		let mut tree = Tree::init();
+		tree.derive_node(0 as usize, registers.clone());
+		for i in 0..tree.nodes.len() {
+			tree.score_node(i, inputs.clone(), outputs.clone());
+			tree.update_parents(i);
+			tree.update_queue(i);
+		}
+
+		let mut counter: usize = 0;
+		loop {
+			for i in tree.queue.clone().iter() {
+				for n in tree.nodes[*i].next.clone().iter() {
+					tree.score_node(*n, inputs.clone(), outputs.clone());
+					tree.update_parents(*n);
+					tree.update_queue(*n);
+					if let Some(score) = tree.nodes[*n].score {
+						if score < d128::from(1) { println!("Winner! {}", tree.nodes[*n].exp);
+							println!("{:?}", tree.queue);
+							return
+						};
+					};
+				}
+			}
+			println!("{:?}", tree.queue);
+			counter += 1;
+			if counter >= iterations { println!("error: failed after {} iterations!", counter); break; }
+		}
+		println!("{:?}", tree.queue);
 	}
 }
 
@@ -182,6 +241,7 @@ impl std::fmt::Display for Node {
     fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
 		w.write_str("\texpression:\t")?; w.write_str(&self.exp)?;
 		w.write_str("\n\ttype:\t\t")?; w.write_str(&self.typ.to_string())?;
+		w.write_str("\n\tindex:\t\t")?; w.write_str(&self.index.to_string())?;
 		w.write_str("\n\tscore:\t\t")?; if let Some(score) = &self.score { w.write_str(&score.to_string())?; }
 		w.write_str("\n\tparent:\t\t")?; w.write_str(&self.prev.to_string())?;
 		w.write_str("\n\tn childs:\t")?; w.write_str(&self.next.len().to_string())?;

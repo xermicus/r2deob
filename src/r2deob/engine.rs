@@ -37,7 +37,6 @@ impl Traces {
 	pub fn push_strings(&mut self, registers: Vec<String>, input: Vec<String>, output: String) -> Result<(), String> {
 		if registers.len() != input.len() { return Err("expected one input for each register".to_string()) };
 
-		//let mut inputs = input.iter().map(|x| x.parse().unwrap()).collect();
 		let mut inputs = HashMap::new();
 		for i in 0..registers.len() {
 			inputs.insert(registers[i].clone(), input[i].parse().unwrap());

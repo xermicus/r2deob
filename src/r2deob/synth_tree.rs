@@ -100,6 +100,7 @@ impl Tree {
 			if let Ok(val) = eval(&expression) {
 				result += eval_score(val.as_float(), d128::from(outputs[i]));
 			} else {
+				println!("error: failed to eval expression {}", expression);
 				return // TODO obviously something to handle
 			};
 		}
@@ -154,6 +155,7 @@ impl Synthesis {
 		}
 		for i in 0..tree.nodes.len() {
 			tree.score_node(i, inputs.clone(), outputs.clone());
+			tree.update_parents(i);
 			if let Some(score) = tree.nodes[i].score {
 				if score < d128::from(1) {
 					println!("Winner! {}", tree.nodes[i].exp);
@@ -162,29 +164,27 @@ impl Synthesis {
 					return
 				};
 			};
-			tree.update_parents(i);
 		}
 	}
 
 	pub fn hamming_score(inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>, registers: Vec<String>) {
 		let mut tree = Tree::init();
 		tree.derive_node(0 as usize, registers.clone());
-		tree.update_queue();
 		loop {
+			tree.update_queue();
 			for i in tree.queue.clone().iter() {
 				tree.derive_node(*i, registers.clone());
 				for n in tree.nodes[*i].next.clone().iter() {
 					tree.score_node(*n, inputs.clone(), outputs.clone());
+					tree.update_parents(*n);
 					if let Some(score) = tree.nodes[*n].score {
 						if score < d128::from(1) {
 							println!("Winner! {}", tree.nodes[*n].exp);
-							println!("{:?}", tree.queue);
-							println!("{}", tree.nodes[*n]);
+							//println!("{:?}", tree.queue);
+							//println!("{}", tree.nodes[*n]);
 							return
 						};
 					};
-					tree.update_parents(*n);
-					tree.update_queue();
 				}
 			}
 		}

@@ -31,8 +31,8 @@ struct Tree {
 }
 
 impl Tree {
-	fn init() -> Tree {
-		Tree {
+	fn init(registers: &Vec<String>) -> Tree {
+		let mut tree: Tree = Tree {
 			nodes: vec![ Node {
 				exp: "U".to_string(),
 				typ: Symbol::Intermediate,
@@ -42,7 +42,9 @@ impl Tree {
 				score: None//d128::from(0)
 			}],
 			queue: Vec::new()
-		}
+		};
+		tree.derive_node(0 as usize, registers.clone());
+		tree
 	}
 
 	fn add_node(&mut self, c: usize, e: String, t: Symbol) {
@@ -132,8 +134,8 @@ impl Tree {
 		for i in self.nodes.iter() {
 			if let Some(score) = i.score {
 				copy.push((i.index.clone(), score.into()));
-			} else {
-				copy.push((i.index.clone(), 1000));
+			} else if i.index > 0 {
+				copy.push((i.index.clone(), 10000));
 			}
 		}
 		copy.sort_by(|a, b| a.1.cmp(&b.1));
@@ -148,12 +150,11 @@ pub struct Synthesis {
 impl Synthesis {
 	pub fn brute_force(inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>, registers: Vec<String>, 
 	iterations: usize) {
-		let mut tree = Tree::init();
-		tree.derive_node(0 as usize, registers.clone());
-		for i in 0..iterations {
+		let mut tree = Tree::init(&registers);
+		for i in 1..iterations {
 			tree.derive_node(i, registers.clone());
 		}
-		for i in 0..tree.nodes.len() {
+		for i in 1..tree.nodes.len() {
 			tree.score_node(i, inputs.clone(), outputs.clone());
 			tree.update_parents(i);
 			if let Some(score) = tree.nodes[i].score {
@@ -168,8 +169,7 @@ impl Synthesis {
 	}
 
 	pub fn hamming_score(inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>, registers: Vec<String>) {
-		let mut tree = Tree::init();
-		tree.derive_node(0 as usize, registers.clone());
+		let mut tree = Tree::init(&registers);
 		loop {
 			tree.update_queue();
 			for i in tree.queue.clone().iter() {

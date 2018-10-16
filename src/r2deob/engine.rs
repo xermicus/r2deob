@@ -136,10 +136,11 @@ impl Session {
 	}
 }
 
+// TODO: Add types enum to support multiple random input types
 fn get_random_input(n: u8) -> Vec<String> {
 	let mut result: Vec<String> = Vec::new();
 	for _i in 0..n {
-		result.push(random::<u8>().to_string()); // TODO: Add types enum to support multiple random input
-	};
+		loop { let r = random::<u8>(); if r != 0 { result.push(r.to_string()); break } }
+	}
 	result
 }

@@ -167,7 +167,6 @@ impl Tree {
 
 pub struct Synthesis {
 	max_runs: usize,
-	n_threads: usize,
 	tree: Tree,
 }
 
@@ -176,7 +175,6 @@ impl Synthesis {
 		let operators: Vec<char> = vec!['+','-','*','/','&','|','^','%'];
 		Synthesis {
 			max_runs: 1000,
-			n_threads: 1,
 			tree: Tree::init(enum_expressions(registers.clone(), operators))
 		}
 	}
@@ -222,6 +220,7 @@ impl Synthesis {
 		}
 	}
 
+	// TODO solve with constant
 	pub fn hamming_score_async(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
 		for _ in 0..self.max_runs {
 			self.tree.update_queue();

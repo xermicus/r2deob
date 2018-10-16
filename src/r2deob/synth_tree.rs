@@ -223,26 +223,19 @@ impl Synthesis {
 			self.tree.update_queue();
 			for i in self.tree.queue.clone().iter() {
 				self.tree.derive_node(*i);
-				let mut expressions: Vec<(Option<d128>,usize,String)> = Vec::new();
-				for n in self.tree.nodes[*i].next.iter() {
-					match self.tree.nodes[*n].typ {
-						Symbol::Candidate => { expressions.push((None, *n, self.tree.nodes[*n].exp.clone())); },
+				let l1: usize = self.tree.nodes.len();
+				let l2: usize = self.tree.nodes[*i].next.len();
+				self.tree.nodes[l1-l2..l1].par_iter_mut().for_each(|n| {
+					match n.typ {
+						Symbol::Candidate => { n.score = Tree::score_node_extern(n.exp.clone(), &inputs, &outputs);	},
 						_ => {}
 					}
-				}
-				expressions.par_iter_mut().for_each(|e| {
-					e.0 = Tree::score_node_extern(e.2.clone(), &inputs, &outputs);
 				});
-				for score in expressions.iter() {
-					if let Some(s) = score.0 {
-						if s < d128::from(1) {
-							println!("Winner! {}", score.2);
-							//println!("iterations: {}", i);
-							return
-						}
+				for n in self.tree.nodes[*i].next.clone().iter() {
+					if let Some(score) = self.tree.nodes[*n].score {
+						if score < d128::from(1) { println!("Winner! {}", self.tree.nodes[*n].exp); return }
 					}
-					self.tree.nodes[score.1].score = score.0;
-					self.tree.update_parents(score.1);
+					self.tree.update_parents(*n);
 				}
 			}
 		}

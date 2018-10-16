@@ -27,7 +27,8 @@ struct Node {
 #[derive(Debug)]
 struct Tree {
 	nodes: Vec<Node>,
-	queue: Vec<usize>
+	queue: Vec<usize>,
+	terms: Vec<(String,Symbol)>
 }
 
 impl Tree {
@@ -39,11 +40,12 @@ impl Tree {
 				index: 0,
 				next: Vec::new(),
 				prev: 0,
-				score: None//d128::from(0)
+				score: None
 			}],
-			queue: Vec::new()
+			queue: Vec::new(),
+			terms: enum_expressions(registers.clone())
 		};
-		tree.derive_node(0 as usize, registers.clone());
+		tree.derive_node(0 as usize);
 		tree
 	}
 
@@ -60,7 +62,7 @@ impl Tree {
 		self.nodes[c].next.push(pos);
 	}
 
-	fn derive_node(&mut self, current_node: usize, inputs: Vec<String>) {
+	fn derive_node(&mut self, current_node: usize) {
 		//					U
 		//		 .----------+----------.
 		//		/ \					  / \	
@@ -68,24 +70,23 @@ impl Tree {
 		match self.nodes.get(current_node).unwrap().typ {
 			Symbol::Candidate => return,
 			_ => {},
-		};
+		}
 
-		let expressions = enum_expressions(inputs);
 		let current_exp = &self.nodes.get(current_node).unwrap().exp;
 		let index_exp: Vec<(_,_)> = current_exp.char_indices().collect();
-		for (exp,typ) in expressions {
+		for (exp,typ) in self.terms.clone() {
 			let mut cand = String::new();
 			for (_, c) in &index_exp {
 				if c == &'U' { 
 					match typ {
 						Symbol::Candidate => { cand.push_str(&exp); },
 						_ => { cand.push_str("("); cand.push_str(&exp); cand.push_str(")"); }
-					};
+					}
 				}
 				else { cand.push(c.clone()); };
-			};
+			}
 			self.add_node(current_node, cand, typ);
-		};
+		}
 	}
 
 	// TODO: Add function to solve Intermediate with a Constant C
@@ -104,7 +105,7 @@ impl Tree {
 			} else {
 				println!("error: failed to eval expression {}", expression);
 				return // TODO obviously something to handle
-			};
+			}
 		}
 		self.nodes[n].score = Some(result);
 	}
@@ -144,7 +145,8 @@ impl Tree {
 }
 
 pub struct Synthesis {
-
+	operators: Vec<char>,
+	max_runs: u16,
 }
 
 impl Synthesis {
@@ -152,7 +154,7 @@ impl Synthesis {
 	iterations: usize) {
 		let mut tree = Tree::init(&registers);
 		for i in 1..iterations {
-			tree.derive_node(i, registers.clone());
+			tree.derive_node(i);
 		}
 		for i in 1..tree.nodes.len() {
 			tree.score_node(i, inputs.clone(), outputs.clone());
@@ -160,11 +162,9 @@ impl Synthesis {
 			if let Some(score) = tree.nodes[i].score {
 				if score < d128::from(1) {
 					println!("Winner! {}", tree.nodes[i].exp);
-					//println!("{:?}", tree.queue);
-					//println!("{}", tree.nodes[i]);
 					return
-				};
-			};
+				}
+			}
 		}
 	}
 
@@ -173,18 +173,16 @@ impl Synthesis {
 		loop {
 			tree.update_queue();
 			for i in tree.queue.clone().iter() {
-				tree.derive_node(*i, registers.clone());
+				tree.derive_node(*i);
 				for n in tree.nodes[*i].next.clone().iter() {
 					tree.score_node(*n, inputs.clone(), outputs.clone());
 					tree.update_parents(*n);
 					if let Some(score) = tree.nodes[*n].score {
 						if score < d128::from(1) {
 							println!("Winner! {}", tree.nodes[*n].exp);
-							//println!("{:?}", tree.queue);
-							//println!("{}", tree.nodes[*n]);
 							return
-						};
-					};
+						}
+					}
 				}
 			}
 		}

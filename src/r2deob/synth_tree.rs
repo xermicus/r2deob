@@ -154,6 +154,7 @@ impl Tree {
 	fn update_queue(&mut self) {
 		let mut copy: Vec<(usize,u32)> = Vec::new();
 		for i in self.nodes.iter() {
+			match i.typ { Symbol::Candidate => { continue }, _=>{} }
 			if let Some(score) = i.score {
 				copy.push((i.index, score.into()));
 			} else if i.index > 0 {

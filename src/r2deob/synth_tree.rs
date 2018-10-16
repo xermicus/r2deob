@@ -7,6 +7,9 @@ use decimal::d128;
 extern crate simhash;
 use simhash::hamming_distance;
 
+extern crate rayon;
+use rayon::prelude::*;
+
 use std::collections::HashMap;
 
 #[derive(Copy, Clone)]
@@ -110,12 +113,11 @@ impl Tree {
 		self.nodes[n].score = Some(result);
 	}
 
-	fn score_node_extern(node: &Node, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>) -> Option<d128> {
-		match node.typ { Symbol::Candidate => { },_ => return None };
+	fn score_node_extern(expr: String, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>) -> Option<d128> {
 		let mut result: d128 = d128::from(0);
-		
+
 		for i in 0..inputs.len() {
-			let mut expression = node.exp.clone();
+			let mut expression = expr.clone();
 			for (register, value) in inputs[i].iter() {
 				expression = expression.replace(register, value);
 			}
@@ -216,24 +218,31 @@ impl Synthesis {
 		}
 	}
 
-	pub fn _hamming_score_async(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
-		// Plan: split tree into mut chunks according to queue
+	pub fn hamming_score_async(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
 		for _ in 0..self.max_runs {
 			self.tree.update_queue();
 			for i in self.tree.queue.clone().iter() {
 				self.tree.derive_node(*i);
-				for n in self.tree.nodes[*i].next.clone().iter() {
-					//self.tree.score_node(*n, &inputs, &outputs);
-					let node = self.tree.nodes.get(*n).unwrap();
-					self.tree.nodes[*n].score = Tree::score_node_extern(&node, &inputs, &outputs);
-					self.tree.update_parents(*n);
-					if let Some(score) = self.tree.nodes[*n].score {
-						if score < d128::from(1) {
-							println!("Winner! {}", self.tree.nodes[*n].exp);
+				let mut expressions: Vec<(Option<d128>,usize,String)> = Vec::new();
+				for n in self.tree.nodes[*i].next.iter() {
+					match self.tree.nodes[*n].typ {
+						Symbol::Candidate => { expressions.push((None, *n, self.tree.nodes[*n].exp.clone())); },
+						_ => {}
+					}
+				}
+				expressions.par_iter_mut().for_each(|e| {
+					e.0 = Tree::score_node_extern(e.2.clone(), &inputs, &outputs);
+				});
+				for score in expressions.iter() {
+					if let Some(s) = score.0 {
+						if s < d128::from(1) {
+							println!("Winner! {}", score.2);
 							//println!("iterations: {}", i);
 							return
 						}
 					}
+					self.tree.nodes[score.1].score = score.0;
+					self.tree.update_parents(score.1);
 				}
 			}
 		}

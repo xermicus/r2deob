@@ -12,6 +12,7 @@ use std::collections::HashMap;
 pub enum Synthesiser {
 	BruteForce,
 	HammingScore,
+	HammingScoreAsync,
 	LibEvoasm
 }
 
@@ -123,6 +124,10 @@ impl Session {
 			Synthesiser::HammingScore => {
 				let mut synthesis = synth_tree::Synthesis::default(&registers);
 				synthesis.hamming_score(inputs, outputs);
+			},
+			Synthesiser::HammingScoreAsync => {
+				let mut synthesis = synth_tree::Synthesis::default(&registers);
+				synthesis.hamming_score_async(inputs, outputs);
 			},
 			Synthesiser::LibEvoasm => {
 				println!("not implemented");

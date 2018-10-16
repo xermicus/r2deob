@@ -154,7 +154,7 @@ impl Synthesis {
 	pub fn default(registers: &Vec<String>) -> Synthesis {
 		let operators: Vec<char> = vec!['+','-','*','/','&','|','^','%'];
 		Synthesis {
-			max_runs: 1000,
+			max_runs: 100,
 			n_threads: 1,
 			tree: Tree::init(enum_expressions(registers.clone(), operators))
 		}
@@ -177,7 +177,7 @@ impl Synthesis {
 	}
 
 	pub fn hamming_score(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
-		loop {
+		for _ in 0..self.max_runs {
 			self.tree.update_queue();
 			for i in self.tree.queue.clone().iter() {
 				self.tree.derive_node(*i);

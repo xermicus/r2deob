@@ -186,14 +186,16 @@ impl Synthesis {
 			self.tree.derive_node(i);
 		}
 		for i in 1..self.tree.nodes.len() {
-			self.tree.score_node(i, &inputs, &outputs);
-			self.tree.update_parents(i);
-			if let Some(score) = self.tree.nodes[i].score {
-				if score < d128::from(1) {
-					println!("Winner! {}", self.tree.nodes[i].exp);
-					//println!("iterations: {}", i);
-					return
+			if self.tree.nodes[i].next.len() < 1 {
+				self.tree.score_node(i, &inputs, &outputs);
+				if let Some(score) = self.tree.nodes[i].score {
+					if score < d128::from(1) {
+						println!("Winner! {}", self.tree.nodes[i].exp);
+						//println!("iterations: {}", i);
+						return
+					}
 				}
+				self.tree.update_parents(i);
 			}
 		}
 	}
@@ -202,15 +204,17 @@ impl Synthesis {
 		for _ in 0..self.max_runs {
 			self.tree.update_queue();
 			for i in self.tree.queue.clone().iter() {
-				self.tree.derive_node(*i);
-				for n in self.tree.nodes[*i].next.clone().iter() {
-					self.tree.score_node(*n, &inputs, &outputs);
-					self.tree.update_parents(*n);
-					if let Some(score) = self.tree.nodes[*n].score {
-						if score < d128::from(1) {
-							println!("Winner! {}", self.tree.nodes[*n].exp);
-							//println!("iterations: {}", i);
-							return
+				if self.tree.nodes[*i].next.len() < 1 {
+					self.tree.derive_node(*i);
+					for n in self.tree.nodes[*i].next.clone().iter() {
+						self.tree.score_node(*n, &inputs, &outputs);
+						self.tree.update_parents(*n);
+						if let Some(score) = self.tree.nodes[*n].score {
+							if score < d128::from(1) {
+								println!("Winner! {}", self.tree.nodes[*n].exp);
+								//println!("iterations: {}", i);
+								return
+							}
 						}
 					}
 				}
@@ -222,20 +226,24 @@ impl Synthesis {
 		for _ in 0..self.max_runs {
 			self.tree.update_queue();
 			for i in self.tree.queue.clone().iter() {
-				self.tree.derive_node(*i);
-				let l1: usize = self.tree.nodes.len();
-				let l2: usize = self.tree.nodes[*i].next.len();
-				self.tree.nodes[l1-l2..l1].par_iter_mut().for_each(|n| {
-					match n.typ {
-						Symbol::Candidate => { n.score = Tree::score_node_extern(n.exp.clone(), &inputs, &outputs);	},
-						_ => {}
+				if self.tree.nodes[*i].next.len() < 1 {
+					self.tree.derive_node(*i);
+					let l1: usize = self.tree.nodes.len();
+					let l2: usize = self.tree.nodes[*i].next.len();
+					self.tree.nodes[l1-l2..l1].par_iter_mut().for_each(|n| {
+						match n.typ {
+							Symbol::Candidate => {
+								n.score = Tree::score_node_extern(n.exp.clone(), &inputs, &outputs);
+							},
+							_ => {}
+						}
+					});
+					for n in self.tree.nodes[*i].next.clone().iter() {
+						if let Some(score) = self.tree.nodes[*n].score {
+							if score < d128::from(1) { println!("Winner! {}", self.tree.nodes[*n].exp); return }
+						}
+						self.tree.update_parents(*n);
 					}
-				});
-				for n in self.tree.nodes[*i].next.clone().iter() {
-					if let Some(score) = self.tree.nodes[*n].score {
-						if score < d128::from(1) { println!("Winner! {}", self.tree.nodes[*n].exp); return }
-					}
-					self.tree.update_parents(*n);
 				}
 			}
 		}

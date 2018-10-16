@@ -117,10 +117,14 @@ impl Session {
 		let registers = self.fcn_config.input_regs.clone();
 		match backend {
 			Synthesiser::BruteForce => {
-				synth_tree::Synthesis::brute_force(inputs, outputs, registers, 1000);
+				let mut synthesis = synth_tree::Synthesis::default(&registers);
+				synthesis.brute_force(inputs, outputs);
+				//synth_tree::Synthesis::brute_force(inputs, outputs, registers, 1000);
 			},
 			Synthesiser::HammingScore => {
-				synth_tree::Synthesis::hamming_score(inputs, outputs, registers);
+				let mut synthesis = synth_tree::Synthesis::default(&registers);
+				synthesis.hamming_score(inputs, outputs);
+				//synth_tree::Synthesis::hamming_score(inputs, outputs, registers);
 			},
 			Synthesiser::LibEvoasm => {
 				println!("not implemented");

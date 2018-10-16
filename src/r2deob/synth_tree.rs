@@ -32,7 +32,7 @@ struct Tree {
 }
 
 impl Tree {
-	fn init(registers: &Vec<String>) -> Tree {
+	fn init(terms: Vec<(String,Symbol)>) -> Tree {
 		let mut tree: Tree = Tree {
 			nodes: vec![ Node {
 				exp: "U".to_string(),
@@ -43,7 +43,7 @@ impl Tree {
 				score: None
 			}],
 			queue: Vec::new(),
-			terms: enum_expressions(registers.clone())
+			terms: terms
 		};
 		tree.derive_node(0 as usize);
 		tree
@@ -145,41 +145,48 @@ impl Tree {
 }
 
 pub struct Synthesis {
-	operators: Vec<char>,
-	max_runs: u16,
+	max_runs: usize,
+	n_threads: usize,
+	tree: Tree,
 }
 
 impl Synthesis {
-	pub fn brute_force(inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>, registers: Vec<String>, 
-	iterations: usize) {
-		let mut tree = Tree::init(&registers);
-		for i in 1..iterations {
-			tree.derive_node(i);
+	pub fn default(registers: &Vec<String>) -> Synthesis {
+		let operators: Vec<char> = vec!['+','-','*','/','&','|','^','%'];
+		Synthesis {
+			max_runs: 1000,
+			n_threads: 1,
+			tree: Tree::init(enum_expressions(registers.clone(), operators))
 		}
-		for i in 1..tree.nodes.len() {
-			tree.score_node(i, inputs.clone(), outputs.clone());
-			tree.update_parents(i);
-			if let Some(score) = tree.nodes[i].score {
+	}
+
+	pub fn brute_force(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
+		for i in 1..self.max_runs {
+			self.tree.derive_node(i);
+		}
+		for i in 1..self.tree.nodes.len() {
+			self.tree.score_node(i, inputs.clone(), outputs.clone());
+			self.tree.update_parents(i);
+			if let Some(score) = self.tree.nodes[i].score {
 				if score < d128::from(1) {
-					println!("Winner! {}", tree.nodes[i].exp);
+					println!("Winner! {}", self.tree.nodes[i].exp);
 					return
 				}
 			}
 		}
 	}
 
-	pub fn hamming_score(inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>, registers: Vec<String>) {
-		let mut tree = Tree::init(&registers);
+	pub fn hamming_score(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
 		loop {
-			tree.update_queue();
-			for i in tree.queue.clone().iter() {
-				tree.derive_node(*i);
-				for n in tree.nodes[*i].next.clone().iter() {
-					tree.score_node(*n, inputs.clone(), outputs.clone());
-					tree.update_parents(*n);
-					if let Some(score) = tree.nodes[*n].score {
+			self.tree.update_queue();
+			for i in self.tree.queue.clone().iter() {
+				self.tree.derive_node(*i);
+				for n in self.tree.nodes[*i].next.clone().iter() {
+					self.tree.score_node(*n, inputs.clone(), outputs.clone());
+					self.tree.update_parents(*n);
+					if let Some(score) = self.tree.nodes[*n].score {
 						if score < d128::from(1) {
-							println!("Winner! {}", tree.nodes[*n].exp);
+							println!("Winner! {}", self.tree.nodes[*n].exp);
 							return
 						}
 					}
@@ -189,14 +196,14 @@ impl Synthesis {
 	}
 }
 
-fn enum_expressions(inputs: Vec<String>) -> Vec<(String,Symbol)> {
+fn enum_expressions(registers: Vec<String>, operators: Vec<char>) -> Vec<(String,Symbol)> {
 	let mut expressions: Vec<(String,Symbol)> = Vec::new();
-	for input in inputs.iter() {
+	for input in registers.iter() {
 		expressions.push((input.to_string(), Symbol::Candidate));
-		for operation in ["+","-","*","/","&","|","^","%"].iter() {
-			expressions.push(("U".to_string() + operation + "U", Symbol::Intermediate));
-			expressions.push((input.to_string() +  operation + "U", Symbol::Intermediate));
-			expressions.push(("U".to_string() + operation + &input, Symbol::Intermediate));
+		for operation in operators.iter() {
+			expressions.push(("U".to_string() + &operation.to_string() + "U", Symbol::Intermediate));
+			expressions.push((input.to_string() +  &operation.to_string() + "U", Symbol::Intermediate));
+			expressions.push(("U".to_string() + &operation.to_string() + &input, Symbol::Intermediate));
 		};
 	};
 	expressions

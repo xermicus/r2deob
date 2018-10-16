@@ -119,12 +119,10 @@ impl Session {
 			Synthesiser::BruteForce => {
 				let mut synthesis = synth_tree::Synthesis::default(&registers);
 				synthesis.brute_force(inputs, outputs);
-				//synth_tree::Synthesis::brute_force(inputs, outputs, registers, 1000);
 			},
 			Synthesiser::HammingScore => {
 				let mut synthesis = synth_tree::Synthesis::default(&registers);
 				synthesis.hamming_score(inputs, outputs);
-				//synth_tree::Synthesis::hamming_score(inputs, outputs, registers);
 			},
 			Synthesiser::LibEvoasm => {
 				println!("not implemented");

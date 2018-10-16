@@ -83,21 +83,21 @@ impl Tree {
 						_ => { cand.push_str("("); cand.push_str(&exp); cand.push_str(")"); }
 					}
 				}
-				else { cand.push(c.clone()); };
+				else { cand.push(*c); };
 			}
 			self.add_node(current_node, cand, typ);
 		}
 	}
 
 	// TODO: Add function to solve Intermediate with a Constant C
-	fn score_node(&mut self, n: usize, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
+	fn score_node(&mut self, n: usize, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>) {
 		let node = if let Some(val) = self.nodes.get(n) { val } else { return };
 		match node.typ { Symbol::Candidate => { },_ => return };
 		let mut result: d128 = d128::from(0);
 		
 		for i in 0..inputs.len() {
 			let mut expression = node.exp.clone();
-			for (register, value) in inputs[i].clone().iter() {
+			for (register, value) in inputs[i].iter() {
 				expression = expression.replace(register, value);
 			}
 			if let Ok(val) = eval(&expression) {
@@ -127,16 +127,16 @@ impl Tree {
 			}
 			current = parent;
 			parent = self.nodes[parent].prev;
-		};
+		}
 	}
 
 	fn update_queue(&mut self) {
 		let mut copy: Vec<(usize,u32)> = Vec::new();
 		for i in self.nodes.iter() {
 			if let Some(score) = i.score {
-				copy.push((i.index.clone(), score.into()));
+				copy.push((i.index, score.into()));
 			} else if i.index > 0 {
-				copy.push((i.index.clone(), 10000));
+				copy.push((i.index, 10000));
 			}
 		}
 		copy.sort_by(|a, b| a.1.cmp(&b.1));
@@ -165,7 +165,7 @@ impl Synthesis {
 			self.tree.derive_node(i);
 		}
 		for i in 1..self.tree.nodes.len() {
-			self.tree.score_node(i, inputs.clone(), outputs.clone());
+			self.tree.score_node(i, &inputs, &outputs);
 			self.tree.update_parents(i);
 			if let Some(score) = self.tree.nodes[i].score {
 				if score < d128::from(1) {
@@ -182,7 +182,7 @@ impl Synthesis {
 			for i in self.tree.queue.clone().iter() {
 				self.tree.derive_node(*i);
 				for n in self.tree.nodes[*i].next.clone().iter() {
-					self.tree.score_node(*n, inputs.clone(), outputs.clone());
+					self.tree.score_node(*n, &inputs, &outputs);
 					self.tree.update_parents(*n);
 					if let Some(score) = self.tree.nodes[*n].score {
 						if score < d128::from(1) {

@@ -17,6 +17,7 @@ enum Symbol {
 	Intermediate,
 	Candidate
 }
+
 #[derive(Clone, Debug)]
 struct Node {
 	exp: String,
@@ -32,6 +33,11 @@ struct Tree {
 	nodes: Vec<Node>,
 	queue: Vec<usize>,
 	terms: Vec<(String,Symbol)>
+}
+
+pub struct Synthesis {
+	max_runs: usize,
+	tree: Tree,
 }
 
 impl Tree {
@@ -144,11 +150,6 @@ impl Tree {
 		copy.sort_by(|a, b| a.1.cmp(&b.1));
 		self.queue = copy.iter().map(|s| s.0).collect();
 	}
-}
-
-pub struct Synthesis {
-	max_runs: usize,
-	tree: Tree,
 }
 
 impl Synthesis {
@@ -291,12 +292,13 @@ impl std::fmt::Display for Node {
     }
 }
 
-impl std::fmt::Display for Symbol { fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-	w.write_str(match *self {
-			Symbol::Intermediate => "Intermediate",
-			Symbol::Candidate => "Candidate",
-        })
-    }
+impl std::fmt::Display for Symbol {
+	fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+		w.write_str(match *self {
+				Symbol::Intermediate => "Intermediate",
+				Symbol::Candidate => "Candidate",
+	        })
+	    }
 }
 
 impl ::std::fmt::Debug for Symbol {

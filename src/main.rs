@@ -11,7 +11,7 @@ fn main() {
 
 	if let Ok(mut session) = r2deob::engine::Session::init(target) {
 		for _ in 0..10 { let _result = session.add_trace(); };
-		//session.deobfuscate(r2deob::engine::Synthesiser::BruteForce);
-		session.deobfuscate(r2deob::engine::Synthesiser::HammingScore);
+		session.deobfuscate(r2deob::engine::Synthesiser::BruteForce);
+		//session.deobfuscate(r2deob::engine::Synthesiser::HammingScore);
 	}
 }

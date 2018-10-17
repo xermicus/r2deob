@@ -93,27 +93,7 @@ impl Tree {
 	}
 
 	// TODO: Add function to solve Intermediate with a Constant C
-	fn score_node(&mut self, n: usize, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>) {
-		let node = if let Some(val) = self.nodes.get(n) { val } else { return };
-		match node.typ { Symbol::Candidate => { },_ => return };
-		let mut result: d128 = d128::from(0);
-		
-		for i in 0..inputs.len() {
-			let mut expression = node.exp.clone();
-			for (register, value) in inputs[i].iter() {
-				expression = expression.replace(register, value);
-			}
-			if let Ok(val) = eval(&expression) {
-				result += eval_score(val.as_float(), d128::from(outputs[i]));
-			} else {
-				println!("error: failed to eval expression {}", expression);
-				return // TODO obviously something to handle
-			}
-		}
-		self.nodes[n].score = Some(result);
-	}
-
-	fn score_node_extern(expr: String, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>) -> Option<d128> {
+	fn score_node(expr: String, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>) -> Option<d128> {
 		let mut result: d128 = d128::from(0);
 
 		for i in 0..inputs.len() {
@@ -186,15 +166,23 @@ impl Synthesis {
 		}
 		for i in 1..self.tree.nodes.len() {
 			if self.tree.nodes[i].next.len() < 1 {
-				self.tree.score_node(i, &inputs, &outputs);
-				if let Some(score) = self.tree.nodes[i].score {
-					if score < d128::from(1) {
-						println!("Winner! {}", self.tree.nodes[i].exp);
-						//println!("iterations: {}", i);
-						return
-					}
+				match self.tree.nodes[i].typ {
+					Symbol::Candidate => {
+						if let Some(score) = Tree::score_node(
+						self.tree.nodes[i].exp.clone(),
+						&inputs,
+						&outputs) {
+							self.tree.nodes[i].score = Some(score);
+							if score < d128::from(1) {
+								println!("Winner! {}", self.tree.nodes[i].exp);
+								//println!("iterations: {}", i);
+								return
+							}
+							self.tree.update_parents(i);
+						}
+					},
+					_ => {}
 				}
-				self.tree.update_parents(i);
 			}
 		}
 	}
@@ -206,14 +194,22 @@ impl Synthesis {
 				if self.tree.nodes[*i].next.len() < 1 {
 					self.tree.derive_node(*i);
 					for n in self.tree.nodes[*i].next.clone().iter() {
-						self.tree.score_node(*n, &inputs, &outputs);
-						self.tree.update_parents(*n);
-						if let Some(score) = self.tree.nodes[*n].score {
-							if score < d128::from(1) {
-								println!("Winner! {}", self.tree.nodes[*n].exp);
-								//println!("iterations: {}", i);
-								return
-							}
+						match self.tree.nodes[*n].typ {
+							Symbol::Candidate => {
+								if let Some(score) = Tree::score_node(
+								self.tree.nodes[*n].exp.clone(),
+								&inputs,
+								&outputs) {
+									self.tree.nodes[*n].score = Some(score);
+									if score < d128::from(1) {
+										println!("Winner! {}", self.tree.nodes[*n].exp);
+										//println!("iterations: {}", i);
+										return
+									}
+									self.tree.update_parents(*n);
+								}
+							},
+							_ => {}
 						}
 					}
 				}
@@ -233,7 +229,7 @@ impl Synthesis {
 					self.tree.nodes[l1-l2..l1].par_iter_mut().for_each(|n| {
 						match n.typ {
 							Symbol::Candidate => {
-								n.score = Tree::score_node_extern(n.exp.clone(), &inputs, &outputs);
+								n.score = Tree::score_node(n.exp.clone(), &inputs, &outputs);
 							},
 							_ => {}
 						}

@@ -14,4 +14,6 @@ fn main() {
 		//session.deobfuscate(r2deob::engine::Synthesiser::BruteForce);
 		session.deobfuscate(r2deob::engine::Synthesiser::HammingScoreAsync);
 	}
+
+	r2deob::sat_interface::build_stack("(= (+ n (/ 6 (* 1 3))) 2)");
 }

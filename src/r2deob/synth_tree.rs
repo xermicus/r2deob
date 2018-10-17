@@ -15,6 +15,7 @@ use std::collections::HashMap;
 #[derive(Copy, Clone)]
 enum Symbol {
 	Intermediate,
+	Constant,
 	Candidate
 }
 
@@ -66,7 +67,7 @@ impl Tree {
 			index: pos,
 			next: Vec::new(),
 			prev: c,
-			score: None//d128::from(0)
+			score: None
 		});
 		self.nodes[c].next.push(pos);
 	}
@@ -78,6 +79,7 @@ impl Tree {
 		// input,  input x U, U x input, U x U 
 		match self.nodes.get(current_node).unwrap().typ {
 			Symbol::Candidate => return,
+			Symbol::Constant => return,
 			_ => {},
 		}
 
@@ -255,6 +257,9 @@ fn enum_expressions(registers: Vec<String>, operators: Vec<char>) -> Vec<(String
 			expressions.push(("U".to_string() + &operation.to_string() + "U", Symbol::Intermediate));
 			expressions.push((input.to_string() +  &operation.to_string() + "U", Symbol::Intermediate));
 			expressions.push(("U".to_string() + &operation.to_string() + &input, Symbol::Intermediate));
+			expressions.push(("C".to_string() + &operation.to_string() + "C", Symbol::Constant));
+			expressions.push((input.to_string() +  &operation.to_string() + "C", Symbol::Constant));
+			expressions.push(("C".to_string() + &operation.to_string() + &input, Symbol::Constant));
 		};
 	};
 	expressions
@@ -296,6 +301,7 @@ impl std::fmt::Display for Symbol {
 	fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
 		w.write_str(match *self {
 				Symbol::Intermediate => "Intermediate",
+				Symbol::Constant => "Constant",
 				Symbol::Candidate => "Candidate",
 	        })
 	    }
@@ -305,6 +311,7 @@ impl ::std::fmt::Debug for Symbol {
     fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         w.write_str(match *self {
 			Symbol::Intermediate => "Intermediate",
+			Symbol::Constant => "Constant",
 			Symbol::Candidate => "Candidate",
         })
     }

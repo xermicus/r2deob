@@ -1,6 +1,6 @@
 # r2deob
 
-Function deobfuscation PoC with r2 + ESIL
+deobfuscation PoC with r2 + ESIL
 
 # What
 
@@ -18,12 +18,12 @@ int calc (int a, int b) {
 
 Given a binary containing this function at the location "sym.calc" we can define the following deobfuscation target:
 ```rust
-	let target = r2deob::engine::FcnConfig {
-		path: "/home/cyrill/r2deob/calc".to_string(), // Path to binary
-		loc: "sym.calc".to_string(), // target location, can be a flag or address
-		len: "12".to_string(), // #numbers of emulation steps before output register is considered
-		input_regs: vec!["esi".to_string(),"edi".to_string()], // Input registers
-		output_reg: "rax".to_string() // Outpout register
+let target = r2deob::engine::FcnConfig {
+	path: "/home/cyrill/r2deob/calc".to_string(), // Path to binary
+	loc: "sym.calc".to_string(), // target location, can be a flag or address
+	len: "12".to_string(), // #numbers of emulation steps before output register is considered
+	input_regs: vec!["esi".to_string(),"edi".to_string()], // Input registers
+	output_reg: "rax".to_string() // Output register
 };
 ```
 

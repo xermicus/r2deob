@@ -45,7 +45,7 @@ impl<'a> ModelParser<String, String, Cst, &'a str> for Parser {
                         }
                     }
                 }
-                Ok(Cst::B(false))//println!("unexpected value `{}`", int)
+                Ok(Cst::B(false))//println!("unexpected Value `{}`", int)
             }
         }
     }
@@ -144,102 +144,197 @@ pub fn demo() {
 	}
 }
 
-enum Token {
-	par_left,
-	par_right,
-	operator,
-	value,
-	variable
+enum TokenType {
+	Operator,
+	Value
 }
 
-pub struct Expression {
-	token: Token,
+struct Token {
+	typ: TokenType,
 	level: u8,
-	symbol: char
+	expression: String,
+	next: Option<Box<Token>>
 }
 
-pub fn build_stack(expression: &str) {
-	for token in parse_expression(expression).unwrap() {
-		println!("symbol: {}\nlevel: {}", token.symbol, token.level);
-	}
-	println!("{}", expression);
-}
-
-pub fn parse_expression(expression: &str) -> Result<Vec<Expression>,&str> {
-	let mut tokens: Vec<Expression> = Vec::new();
+pub fn build_stack(expression:&str) {
+	let mut ast: Vec<Token> = Vec::new();
 	let mut level: u8 = 0;
-	for symbol in expression.chars() {
-		match symbol {
-			'(' => {
-				tokens.push(Expression {
-					token: Token::par_left,
-					level: level,
-					symbol: symbol
-				});
-				level += 1;
-			},
-			')' => {
-				tokens.push(Expression {
-					token: Token::par_right,
-					level: level,
-					symbol: symbol
-				});
-				level -= 1;
-			},
-			'=' => {
-				tokens.push(Expression {
-					token: Token::operator,
-					level: level,
-					symbol: symbol
-				});
-		 	},
-			'+' => {
-				tokens.push(Expression {
-					token: Token::operator,
-					level: level,
-					symbol: symbol
-				});
-		 	},
-			'-' => {
-				tokens.push(Expression {
-					token: Token::operator,
-					level: level,
-					symbol: symbol
-				});
-		 	},
-			'*' => {
-				tokens.push(Expression {
-					token: Token::operator,
-					level: level,
-					symbol: symbol
-				});
-		 	},
-			'/' => {
-				tokens.push(Expression {
-					token: Token::operator,
-					level: level,
-					symbol: symbol
-				});
-		 	},
-			'C' => {
-				tokens.push(Expression {
-					token: Token::variable,
-					level: level,
-					symbol: symbol
-				});
-		 	},
-			_ => {
-				tokens.push(Expression {
-					token: Token::value,
-					level: level,
-					symbol: symbol
-				});
-		 	},
+	let mut context: bool = false;
+	for c in expression.chars() {
+		match c {
+			'(' => { level += 1; context = false },
+			')' => { level -= 1; context = false },
+			'+' => { context = false; ast.push(Token {
+				typ: TokenType::Operator, level: level, expression: c.to_string(), next: None })},
+			'-' => { context = false; ast.push(Token {
+				typ: TokenType::Operator, level: level, expression: c.to_string(), next: None })},
+			'*' => { context = false; ast.push(Token {
+				typ: TokenType::Operator, level: level, expression: c.to_string(), next: None })},
+			'/' => { context = false; ast.push(Token {
+				typ: TokenType::Operator, level: level, expression: c.to_string(), next: None })},
+			_ => {	
+					if context {
+						let i: usize = ast.len() - 1;
+						ast[i].expression.push(c)
+					} else {
+						context = true; ast.push(Token {
+							typ: TokenType::Value, level: level, expression: c.to_string(), next: None })
+					}
+				},
 		}
 	}
-	if tokens.len() > 0 {
-		Ok(tokens)
-	} else {
-		Err("failed to parse expression")
+	
+	for t in ast.iter() {
+		println!("{}", t.expression);
+		match t.typ {
+			TokenType::Operator => { println!("\tOperator"); },
+			TokenType::Value => { println!("\tValue"); },
+		}
+		println!("\t{}", t.level);
 	}
 }
+
+//enum TokenType {
+//	ParLeft,
+//	ParRightt,
+//	Operator,
+//	Value,
+//	Variable
+//}
+//
+//enum Position {
+//	Left,
+//	Mid,
+//	Right
+//}
+//
+//pub struct Expression {
+//	tokentype: TokenType,
+//	level: u8,
+//	value: String,
+//}
+//
+//struct Node {
+//	expression: Expression,
+//	position: Position,
+//	next: Box<Node>,
+//}
+//
+//pub fn build_stack(expression: &str) {
+//	let mut result: Vec<Node> = Vec::new();
+//	//let mut result: String = String::new();
+//	let mut max_level: u8 = 0;
+//	if let Ok(tokens) = parse_expression(expression) {
+//		for token in tokens.iter() {
+//			// Find innest node
+//			if token.level > max_level { max_level = token.level }
+//		}
+//		for level in 0..max_level {
+//			for token in tokens.iter() {
+//				let mut switch = false;
+//				let mut side = false;
+//				let mut ident: usize = 0;
+//				if token.level == level { 
+//					match token.tokentype {
+//						TokenType::ParLeft => { 
+//							result.insert_str(0, "( ");
+//						},
+//						TokenType::ParRightt => {
+//							result.push_str(" )");
+//						},
+//						TokenType::Operator => {
+//							result.insert(1, token.symbol);
+//							result.insert(2, ' ');
+//							switch = true;
+//						},
+//						_ => {
+//							if switch { result.push(' '); switch = false; side = true; }
+//							if side { result.push(token.symbol); }
+//							else { result.insert(0 + ident, token.symbol); ident +=1; }
+//						}
+//					}
+//				}
+//			}
+//		}
+//	}
+//	println!("{}", result);
+//}
+//
+//pub fn parse_expression(expression: &str) -> Result<Vec<Expression>,&str> {
+//	let mut tokens: Vec<Expression> = Vec::new();
+//	let mut level: u8 = 0;
+//	for symbol in expression.chars() {
+//		match symbol {
+//			'(' => {
+//				tokens.push(Expression {
+//					tokentype: TokenType::ParLeft,
+//					level: level,
+//					symbol: symbol
+//				});
+//				level += 1;
+//			},
+//			')' => {
+//				tokens.push(Expression {
+//					tokentype: TokenType::ParRightt,
+//					level: level,
+//					symbol: symbol
+//				});
+//				level -= 1;
+//			},
+//			'=' => {
+//				tokens.push(Expression {
+//					tokentype: TokenType::Operator,
+//					level: level,
+//					symbol: symbol
+//				});
+//		 	},
+//			'+' => {
+//				tokens.push(Expression {
+//					tokentype: TokenType::Operator,
+//					level: level,
+//					symbol: symbol
+//				});
+//		 	},
+//			'-' => {
+//				tokens.push(Expression {
+//					tokentype: TokenType::Operator,
+//					level: level,
+//					symbol: symbol
+//				});
+//		 	},
+//			'*' => {
+//				tokens.push(Expression {
+//					tokentype: TokenType::Operator,
+//					level: level,
+//					symbol: symbol
+//				});
+//		 	},
+//			'/' => {
+//				tokens.push(Expression {
+//					tokentype: TokenType::Operator,
+//					level: level,
+//					symbol: symbol
+//				});
+//		 	},
+//			'C' => {
+//				tokens.push(Expression {
+//					tokentype: TokenType::Variable,
+//					level: level,
+//					symbol: symbol
+//				});
+//		 	},
+//			_ => {
+//				tokens.push(Expression {
+//					tokentype: TokenType::Value,
+//					level: level,
+//					symbol: symbol
+//				});
+//		 	},
+//		}
+//	}
+//	if tokens.len() > 0 {
+//		Ok(tokens)
+//	} else {
+//		Err("failed to parse expression")
+//	}
+//}

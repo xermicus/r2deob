@@ -174,6 +174,8 @@ fn print_ast(ast: Vec<Token>) {
 }
 
 fn get_ast(tokens: Vec<Token>) -> Vec<Token> {
+	let mut max_level: u8 = 0;
+	for token in tokens { if token.level > max_level { max_level = token.level } }
 	Vec::new()
 }
 
@@ -192,6 +194,8 @@ fn get_tokens(expression: &str) -> Vec<Token> {
 			'*' => { context = false; result.push(Token {
 				typ: TokenType::Operator, level: level, expression: c.to_string(), next: None })},
 			'/' => { context = false; result.push(Token {
+				typ: TokenType::Operator, level: level, expression: c.to_string(), next: None })},
+			'=' => { context = false; result.push(Token {
 				typ: TokenType::Operator, level: level, expression: c.to_string(), next: None })},
 			_ => {	
 					if context {

@@ -10,10 +10,10 @@ fn main() {
 	};
 
 	if let Ok(mut session) = r2deob::engine::Session::init(target) {
-		for _ in 0..10 { let _result = session.add_trace(); };
+		for _ in 0..10 {
+			let _result = session.add_trace();
+		};
 		//session.deobfuscate(r2deob::engine::Synthesiser::BruteForce);
 		session.deobfuscate(r2deob::engine::Synthesiser::HammingScoreAsync);
 	}
-
-	//r2deob::sat_interface::build_stack("(C+(6/(1*3))=2)");
 }

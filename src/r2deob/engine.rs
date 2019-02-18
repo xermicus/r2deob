@@ -140,7 +140,13 @@ impl Session {
 fn get_random_input(n: u8) -> Vec<String> {
 	let mut result: Vec<String> = Vec::new();
 	for _i in 0..n {
-		loop { let r = random::<u8>(); if r != 0 { result.push(r.to_string()); break } }
+		loop {
+			let r = random::<u8>();
+			if r != 0 {
+				result.push(r.to_string());
+				break
+			}
+		}
 	}
 	result
 }

@@ -125,14 +125,16 @@ impl ::std::fmt::Display for Op {
     }
 }
 
-pub fn demo() {
+#[test]
+pub fn sat_test() {
 	let mut solver = Solver::default(Parser).unwrap();
 	
 	solver.declare_const("n", "Int").unwrap();
 	//solver.declare_const("m", "Int").unwrap();
 	//let expression = "(= (+ (* n n) (* m m)) 9)";
 	//let expression = "(= (+ (/ 6 (* 1 3)) n) 2)";
-	let expression = " (= (+ n (/ 6 (* 1 3))) 2)";
+	//let expression = " (= (+ n (/ 6 (* 1 3))) 2)";
+	let expression = " (= (+ 2 (/ 6 (* 1 3))) n)";
 	solver.assert(&expression).unwrap();
 	solver.check_sat().expect("expected true expression");
 	
@@ -142,71 +144,4 @@ pub fn demo() {
 	for (ident, typ, value) in model {
 		println!("{}: {} = {}",ident,typ,value);
 	}
-}
-
-enum TokenType {
-	Operator,
-	Value
-}
-
-struct Token {
-	typ: TokenType,
-	level: u8,
-	expression: String,
-	next: Option<Box<Token>>
-}
-
-pub fn build_stack(expression:&str) {
-	let mut tokens = get_tokens(expression);
-	let mut ast = get_ast(get_tokens(expression));
-	for t in tokens.iter() {
-		println!("{}", t.expression);
-		match t.typ {
-			TokenType::Operator => { println!("\tOperator"); },
-			TokenType::Value => { println!("\tValue"); },
-		}
-		println!("\t{}", t.level);
-	}
-}
-
-fn print_ast(ast: Vec<Token>) {
-
-}
-
-fn get_ast(tokens: Vec<Token>) -> Vec<Token> {
-	let mut max_level: u8 = 0;
-	for token in tokens { if token.level > max_level { max_level = token.level } }
-	Vec::new()
-}
-
-fn get_tokens(expression: &str) -> Vec<Token> {
-	let mut result: Vec<Token> = Vec::new();
-	let mut level: u8 = 0;
-	let mut context: bool = false;
-	for c in expression.chars() {
-		match c {
-			'(' => { level += 1; context = false },
-			')' => { level -= 1; context = false },
-			'+' => { context = false; result.push(Token {
-				typ: TokenType::Operator, level: level, expression: c.to_string(), next: None })},
-			'-' => { context = false; result.push(Token {
-				typ: TokenType::Operator, level: level, expression: c.to_string(), next: None })},
-			'*' => { context = false; result.push(Token {
-				typ: TokenType::Operator, level: level, expression: c.to_string(), next: None })},
-			'/' => { context = false; result.push(Token {
-				typ: TokenType::Operator, level: level, expression: c.to_string(), next: None })},
-			'=' => { context = false; result.push(Token {
-				typ: TokenType::Operator, level: level, expression: c.to_string(), next: None })},
-			_ => {	
-					if context {
-						let i: usize = result.len() - 1;
-						result[i].expression.push(c)
-					} else {
-						context = true; result.push(Token {
-							typ: TokenType::Value, level: level, expression: c.to_string(), next: None })
-					}
-				},
-		}
-	}
-	result
 }

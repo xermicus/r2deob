@@ -12,6 +12,8 @@ use rayon::prelude::*;
 
 use std::collections::HashMap;
 
+use super::ast::Expression;
+
 #[derive(Copy, Clone)]
 enum Symbol {
 	Intermediate,
@@ -227,6 +229,7 @@ impl Synthesis {
 			for i in self.tree.queue.clone().iter() {
 				if self.tree.nodes[*i].next.len() < 1 {
 					self.tree.derive_node(*i);
+					// TODO this is dangerous
 					let l1: usize = self.tree.nodes.len();
 					let l2: usize = self.tree.nodes[*i].next.len();
 					self.tree.nodes[l1-l2..l1].par_iter_mut().for_each(|n| {

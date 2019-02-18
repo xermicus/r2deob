@@ -1,26 +1,11 @@
+use super::sat_interface::Op;
+
 #[derive(Debug)]
 pub enum Expression {
 	Terminal(u64),
 	NonTerminal,
 	Constant,
-	Operation(Operator, Box<Expression>, Box<Expression>)
-}
-
-#[derive(Debug)]
-pub enum Operator {
-	Add,
-	Sub,
-	Mul,
-	Div,
-	Pow,
-	Mod,
-	//LShift,
-	//RShift,
-	//Xor,
-	//And,
-	//Or,
-	//Not,
-	Eql
+	Operation(Op, Box<Expression>, Box<Expression>)
 }
 
 impl ::std::fmt::Display for Expression {
@@ -34,27 +19,13 @@ impl ::std::fmt::Display for Expression {
 	}
 }
 
-impl ::std::fmt::Display for Operator {
-    fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        w.write_str(match *self {
-            Operator::Add => "+",
-            Operator::Sub => "-",
-            Operator::Mul => "*",
-            Operator::Div => "/",
-            Operator::Pow => "^",
-            Operator::Mod => "%",
-            Operator::Eql => "=",
-        })
-    }
-}
-
 #[test]
-fn ast() {
+fn ast_test() {
 	let ast = Expression::Operation(
-		Operator::Add,
+		Op::Add,
 		Box::new(Expression::Terminal(1)),
 		Box::new(Expression::Operation(
-			Operator::Sub,
+			Op::Sub,
 			Box::new(Expression::NonTerminal),
 			Box::new(Expression::Constant)
 		))

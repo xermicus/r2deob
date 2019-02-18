@@ -96,7 +96,9 @@ impl Tree {
 						_ => { cand.push_str("("); cand.push_str(&exp); cand.push_str(")"); }
 					}
 				}
-				else { cand.push(*c); };
+				else {
+					cand.push(*c);
+				};
 			}
 			self.add_node(current_node, cand, typ);
 		}
@@ -207,8 +209,7 @@ impl Synthesis {
 								&outputs) {
 									self.tree.nodes[*n].score = Some(score);
 									if score < d128::from(1) {
-										println!("Winner! {}", self.tree.nodes[*n].exp);
-										//println!("iterations: {}", i);
+										println!("{:?}", &self.tree);
 										return
 									}
 									self.tree.update_parents(*n);
@@ -242,7 +243,12 @@ impl Synthesis {
 					});
 					for n in self.tree.nodes[*i].next.clone().iter() {
 						if let Some(score) = self.tree.nodes[*n].score {
-							if score < d128::from(1) { println!("Winner! {}", self.tree.nodes[*n].exp); return }
+							if score < d128::from(1) {
+								//println!("{:?}", &self.tree.nodes);
+								println!("Winner! {}", self.tree.nodes[*n].exp);
+								println!("iterations: {}", i);
+								return
+							}
 						}
 						self.tree.update_parents(*n);
 					}

@@ -94,11 +94,12 @@ impl ::std::fmt::Display for Cst {
 //    }
 //}
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum Op {
     Add,
     Sub,
     Mul,
+	Div,
     Conj,
     Disj,
     Eql,
@@ -114,6 +115,7 @@ impl ::std::fmt::Display for Op {
             Op::Add => "+",
             Op::Sub => "-",
             Op::Mul => "*",
+			Op::Div => "/",
             Op::Conj => "and",
             Op::Disj => "or",
             Op::Eql => "=",
@@ -132,8 +134,6 @@ pub fn sat_test() {
 	solver.declare_const("n", "Int").unwrap();
 	//solver.declare_const("m", "Int").unwrap();
 	//let expression = "(= (+ (* n n) (* m m)) 9)";
-	//let expression = "(= (+ (/ 6 (* 1 3)) n) 2)";
-	//let expression = " (= (+ n (/ 6 (* 1 3))) 2)";
 	let expression = " (= (+ 2 (/ 6 (* 1 3))) n)";
 	solver.assert(&expression).unwrap();
 	solver.check_sat().expect("expected true expression");

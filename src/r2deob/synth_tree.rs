@@ -1,4 +1,72 @@
-extern crate calc;
+extern crate rayon;
+use rayon::prelude::*;
+
+use rsmt2::SmtRes;
+
+use std::collections::HashMap;
+
+use super::ast::Expression;
+use super::score::Score;
+use super::sat_interface::Op;
+
+#[derive(Debug)]
+enum Node {
+	Intermediate(
+		Expression,
+		Score,
+		usize,
+		Option<Vec<usize>>
+	),
+	Candidate(
+		Expression,
+		Score,
+		usize,
+	),
+	Constant(
+		Expression,
+		Score,
+		usize,
+		SmtRes<String>
+	),
+}
+
+#[derive(Debug)]
+pub struct Synthesis {
+	max_runs: usize,
+	tree: Vec<Node>,
+	queue: Vec<usize>,
+	terms: Vec<Expression>,
+	scoring: Score,
+}
+
+impl Node {
+	fn score_node(&mut self, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>) -> Option<u16> {
+		Some(0)
+	}
+}
+
+impl Synthesis {
+	pub fn default(registers: &Vec<String>) -> Synthesis {
+		Synthesis {
+			max_runs: 1000,
+			tree: vec![Node::Intermediate(Expression::NonTerminal, Score::UnSat, 0, None)],
+			queue: vec![0],
+			terms: Expression::combinations(registers),
+			scoring: Score::Combined(0.0)
+		}
+	}
+
+	pub fn hamming_score_async(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
+
+	}
+
+	pub fn brute_force(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
+	}
+
+	pub fn hamming_score(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
+	}
+}
+/*extern crate calc;
 use calc::eval;
 
 extern crate decimal;
@@ -23,7 +91,7 @@ enum Symbol {
 
 #[derive(Clone, Debug)]
 struct Node {
-	exp: String,
+	exp: Expression,
 	typ: Symbol,
 	index: usize,
 	next: Vec<usize>,
@@ -35,7 +103,7 @@ struct Node {
 struct Tree {
 	nodes: Vec<Node>,
 	queue: Vec<usize>,
-	terms: Vec<(String,Symbol)>
+	terms: Vec<(Expression,Symbol)>
 }
 
 pub struct Synthesis {
@@ -258,12 +326,14 @@ impl Synthesis {
 	}
 }
 
-fn enum_expressions(registers: Vec<String>, operators: Vec<char>) -> Vec<(String,Symbol)> {
-	let mut expressions: Vec<(String,Symbol)> = Vec::new();
+fn enum_expressions(registers: Vec<String>, operators: Vec<char>) -> Vec<(Expression,Symbol)> {
+	let mut expressions: Vec<(Expression,Symbol)> = Vec::new();
 	for input in registers.iter() {
-		expressions.push((input.to_string(), Symbol::Candidate));
+		// direct candidate
+		expressions.push((Expression::Terminal(&input.to_string()), Symbol::Candidate));
 		for operation in operators.iter() {
-			expressions.push(("U".to_string() + &operation.to_string() + "U", Symbol::Intermediate));
+			//expressions.push(("U".to_string() + &operation.to_string() + "U", Symbol::Intermediate));
+			expressions.push(Expression::Operation(("U".to_string() + &operation.to_string() + "U", Symbol::Intermediate));
 			expressions.push((input.to_string() +  &operation.to_string() + "U", Symbol::Intermediate));
 			expressions.push(("U".to_string() + &operation.to_string() + &input, Symbol::Intermediate));
 			expressions.push(("C".to_string() + &operation.to_string() + "C", Symbol::Constant));
@@ -324,4 +394,4 @@ impl ::std::fmt::Debug for Symbol {
 			Symbol::Candidate => "Candidate",
         })
     }
-}
+}*/

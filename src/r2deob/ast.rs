@@ -1,8 +1,10 @@
+use enum_iterator::IntoEnumIterator;
+
 use super::sat_interface::Op;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
-	Terminal(u64),
+	Terminal(String),
 	NonTerminal,
 	Constant,
 	Operation(Op, Box<Expression>, Box<Expression>)
@@ -19,16 +21,35 @@ impl ::std::fmt::Display for Expression {
 	}
 }
 
+impl Expression {
+	pub fn combinations(registers: &Vec<String>) -> Vec<Expression> {
+		let mut result: Vec<Expression> = Vec::new();
+		for reg in registers {
+			result.push(Expression::Terminal(reg.clone()));
+		}
+		for op in Op::into_enum_iter().filter(|x| !x.to_string().contains('=')) {
+			result.push(Expression::Operation(op, Box::new(Expression::NonTerminal), Box::new(Expression::NonTerminal)));
+		}
+		for reg in registers {
+			for op in Op::into_enum_iter().filter(|x| !x.to_string().contains('=')) {
+				result.push(Expression::Operation(op, Box::new(Expression::Terminal(reg.clone())), Box::new(Expression::NonTerminal)));
+				result.push(Expression::Operation(op, Box::new(Expression::NonTerminal), Box::new(Expression::Terminal(reg.clone()))));
+			}
+		}
+		result
+	}
+}
+
 #[test]
 fn ast_test() {
 	let ast = Expression::Operation(
 		Op::Add,
-		Box::new(Expression::Terminal(1)),
+		Box::new(Expression::Terminal("rax".to_string())),
 		Box::new(Expression::Operation(
 			Op::Sub,
 			Box::new(Expression::NonTerminal),
 			Box::new(Expression::Constant)
 		))
 	);
-    assert_eq!("(+ 1 (- U x))", format!("{}", ast));
+    assert_eq!("(+ rax (- U x))", format!("{}", ast));
 }

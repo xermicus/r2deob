@@ -4,6 +4,10 @@ use rsmt2::Solver;
 use rsmt2::parse::IdentParser;
 use rsmt2::parse::ModelParser;
 
+use enum_iterator::IntoEnumIterator;
+
+use super::ast::Expression;
+
 /// Empty parser structure, we will not maintain any context.
 #[derive(Clone, Copy)]
 pub struct Parser;
@@ -21,110 +25,104 @@ impl<'a> IdentParser<String, String, &'a str> for Parser {
 }
 
 impl<'a> ModelParser<String, String, Cst, &'a str> for Parser {
-    fn parse_value(
-        self,
-        input: &'a str,
-        _: &String,
-        _: &[(String, String)],
-        _: &String,
-    ) -> SmtRes<Cst> {
-        match input.trim() {
-            "true" => Ok(Cst::B(true)),
-            "false" => Ok(Cst::B(false)),
-            int => {
-                use std::str::FromStr;
-                let s = int.trim();
-                if let Ok(res) = isize::from_str(s) {
-                    return Ok(Cst::I(res));
-                } else if s.len() >= 4 && &s[0..1] == "(" && &s[s.len() - 1..] == ")" {
-                    let s = &s[1..s.len() - 1].trim();
-                    if &s[0..1] == "-" {
-                        let s = &s[1..].trim();
-                        if let Ok(res) = isize::from_str(s) {
-                            return Ok(Cst::I(-res));
-                        }
-                    }
-                }
-                Ok(Cst::B(false))//println!("unexpected Value `{}`", int)
-            }
-        }
-    }
+	fn parse_value(
+		self,
+		input: &'a str,
+		_: &String,
+		_: &[(String, String)],
+		_: &String,
+	) -> SmtRes<Cst> {
+		match input.trim() {
+			"true" => Ok(Cst::B(true)),
+			"false" => Ok(Cst::B(false)),
+			int => {
+				use std::str::FromStr;
+				let s = int.trim();
+				if let Ok(res) = isize::from_str(s) {
+					return Ok(Cst::I(res));
+				} else if s.len() >= 4 && &s[0..1] == "(" && &s[s.len() - 1..] == ")" {
+					let s = &s[1..s.len() - 1].trim();
+					if &s[0..1] == "-" {
+						let s = &s[1..].trim();
+						if let Ok(res) = isize::from_str(s) {
+							return Ok(Cst::I(-res));
+						}
+					}
+				}
+				Ok(Cst::B(false))//println!("unexpected Value `{}`", int)
+			}
+		}
+	}
 }
 
 /// A constant.
 #[derive(Clone, Copy)]
 pub enum Cst {
-    /// Boolean constant.
-    B(bool),
-    /// Integer constant.
-    I(isize),
+	/// Boolean constant.
+	B(bool),
+	/// Integer constant.
+	I(isize),
 }
 impl ::std::fmt::Display for Cst {
-    fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match *self {
-            Cst::B(b) => write!(w, "{}", b),
-            Cst::I(i) if i >= 0 => write!(w, "{}", i),
-            Cst::I(i) => write!(w, "(- {})", -i),
-        }
-    }
+	fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+		match *self {
+			Cst::B(b) => write!(w, "{}", b),
+			Cst::I(i) if i >= 0 => write!(w, "{}", i),
+			Cst::I(i) => write!(w, "(- {})", -i),
+		}
+	}
 }
 
 //impl From<bool> for Cst {
-//    fn from(b: bool) -> Self {
-//        Cst::B(b)
-//    }
+//	fn from(b: bool) -> Self {
+//		Cst::B(b)
+//	}
 //}
 //impl From<isize> for Cst {
-//    fn from(i: isize) -> Self {
-//        Cst::I(i)
-//    }
+//	fn from(i: isize) -> Self {
+//		Cst::I(i)
+//	}
 //}
 ///// An example of expression.
 //pub enum Expr {
-//    /// A constant.
-//    C(Cst),
-//    /// Variable.
-//    V(String),
-//    /// Operator application.
-//    O(Op, Vec<Expr>),
+//	/// A constant.
+//	C(Cst),
+//	/// Variable.
+//	V(String),
+//	/// Operator application.
+//	O(Op, Vec<Expr>),
 //}
 //impl Expr {
-//    pub fn cst<C: Into<Cst>>(c: C) -> Self {
-//        Expr::C(c.into())
-//    }
+//	pub fn cst<C: Into<Cst>>(c: C) -> Self {
+//		Expr::C(c.into())
+//	}
 //}
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, IntoEnumIterator)]
 pub enum Op {
-    Add,
-    Sub,
-    Mul,
+	Add,
+	Sub,
+	Mul,
 	Div,
-    Conj,
-    Disj,
-    Eql,
-    Ge,
-    Gt,
-    Lt,
-    Le,
+	//Conj,
+	//Disj,
+	Pow,
+	Eql,
 }
 
 impl ::std::fmt::Display for Op {
-    fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        w.write_str(match *self {
-            Op::Add => "+",
-            Op::Sub => "-",
-            Op::Mul => "*",
+	fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+		w.write_str(match *self {
+			Op::Add => "+",
+			Op::Sub => "-",
+			Op::Mul => "*",
 			Op::Div => "/",
-            Op::Conj => "and",
-            Op::Disj => "or",
-            Op::Eql => "=",
-            Op::Ge => ">=",
-            Op::Gt => ">",
-            Op::Lt => "<",
-            Op::Le => "<=",
-        })
-    }
+			//Op::Conj => "and",
+			//Op::Disj => "or",
+			Op::Pow => "^",
+			Op::Eql => "=",
+		})
+	}
 }
 
 #[test]
@@ -134,6 +132,7 @@ pub fn sat_test() {
 	solver.declare_const("n", "Int").unwrap();
 	//solver.declare_const("m", "Int").unwrap();
 	//let expression = "(= (+ (* n n) (* m m)) 9)";
+	//let expression = "(= (^ 3 2) n)";
 	let expression = " (= (+ 2 (/ 6 (* 1 3))) n)";
 	solver.assert(&expression).unwrap();
 	solver.check_sat().expect("expected true expression");

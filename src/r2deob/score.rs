@@ -6,6 +6,7 @@ pub enum Score {
 	AbsDistance(f32),
 	RangeDistance(f32),
 	Combined(f32),
+	Unknown,
 	UnSat,
 }
 

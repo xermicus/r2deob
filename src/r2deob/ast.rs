@@ -38,6 +38,33 @@ impl Expression {
 		}
 		result
 	}
+
+	pub fn derive(expression: &mut Expression, derivates: &Vec<Expression>) -> Vec<Expression> {
+		let mut result: Vec<Expression> = Vec::new();
+		match expression {
+			Expression::Operation(op, a, b) => {
+				for e in Expression::derive(a, derivates).iter() {
+					result.push(Expression::Operation(
+						*op,
+						Box::new(e.clone()),
+						Box::new(*b.clone())
+					));
+				}
+				for e in Expression::derive(b, derivates).iter() {
+					result.push(Expression::Operation(
+						*op,
+						Box::new(*a.clone()),
+						Box::new(e.clone())
+					));
+				}
+			},
+			Expression::NonTerminal => {
+				return derivates.clone();
+			},
+			_ => {}
+		}
+		result
+	}
 }
 
 #[test]

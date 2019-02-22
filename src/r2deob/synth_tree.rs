@@ -15,7 +15,7 @@ enum Node {
 		Expression,
 		Score,
 		usize,
-		Option<Vec<usize>>
+		Vec<usize>
 	),
 	Candidate(
 		Expression,
@@ -40,20 +40,22 @@ pub struct Synthesis {
 }
 
 impl Node {
-	fn score_node(&mut self, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>) -> Option<u16> {
-		Some(0)
+	fn score_node(&mut self, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>) {
+
 	}
 }
 
 impl Synthesis {
 	pub fn default(registers: &Vec<String>) -> Synthesis {
-		Synthesis {
+		let mut result = Synthesis {
 			max_runs: 1000,
-			tree: vec![Node::Intermediate(Expression::NonTerminal, Score::UnSat, 0, None)],
+			tree: vec![Node::Intermediate(Expression::NonTerminal, Score::UnSat, 0, Vec::new())],
 			queue: vec![0],
 			terms: Expression::combinations(registers),
 			scoring: Score::Combined(0.0)
-		}
+		};
+		result.derive_node(0);
+		result
 	}
 
 	pub fn hamming_score_async(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
@@ -64,6 +66,32 @@ impl Synthesis {
 	}
 
 	pub fn hamming_score(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
+	}
+
+	pub fn derive_node(&mut self, node: usize) -> Option<Vec<usize>> {
+		let mut expressions: Vec<Expression> = Vec::new();
+		let mut indexes: Vec<usize> = Vec::new();
+		match self.tree.get(node).unwrap() {
+			Node::Intermediate(expression, _, _, _) => {
+				expressions.append(&mut Expression::derive(&mut expression.clone(), &self.terms));
+				for e in expressions.iter() {
+					let index = &self.tree.len() + 1;
+					self.tree.push(Node::Intermediate(e.clone(), Score::Unknown, index, Vec::new()));
+					indexes.push(index);
+				}
+			},
+			_ => return None
+		}
+			
+		if let Node::Intermediate(expression, _,_,_) = self.tree.get(13).unwrap() {
+			println!("{}", expression);
+			for e in Expression::derive(&mut expression.clone(), &self.terms).iter() {
+				println!("{}", e);
+			}
+		}
+		println!("{:?}", self.tree);
+
+		Some(indexes)
 	}
 }
 /*extern crate calc;

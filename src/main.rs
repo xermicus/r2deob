@@ -13,7 +13,6 @@ fn main() {
 		for _ in 0..10 {
 			let _result = session.add_trace();
 		};
-		//session.deobfuscate(r2deob::engine::Synthesiser::BruteForce);
-		session.deobfuscate(r2deob::engine::Synthesiser::HammingScoreAsync);
+		session.deobfuscate(r2deob::engine::Synthesiser::Tree);
 	}
 }

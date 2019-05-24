@@ -22,6 +22,25 @@ impl ::std::fmt::Display for Expression {
 }
 
 impl Expression {
+	pub fn math_notation(&self) -> String {
+		match self {
+			Expression::Terminal(x) => return x.clone(),
+			Expression::NonTerminal => return "U".to_string(),
+			Expression::Constant => return "x".to_string(),
+			Expression::Operation(op, a, b) => return format!("({} {} {})", Expression::math_notation(a), op, Expression::math_notation(b))
+		}
+	}
+
+	pub fn is_finite(expression: &mut Expression) -> bool {
+		match expression {
+			Expression::NonTerminal => return false,
+			Expression::Operation(_, a, b) => {
+				return Expression::is_finite(&mut *a.clone()) & Expression::is_finite(&mut *b.clone())
+			},
+			_ => return true
+		}
+	}
+
 	pub fn combinations(registers: &Vec<String>) -> Vec<Expression> {
 		let mut result: Vec<Expression> = Vec::new();
 		for reg in registers {

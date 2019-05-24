@@ -10,9 +10,7 @@ use super::R2Error;
 use std::collections::HashMap;
 
 pub enum Synthesiser {
-	BruteForce,
-	HammingScore,
-	HammingScoreAsync,
+	Tree,
 	LibEvoasm
 }
 
@@ -117,17 +115,10 @@ impl Session {
 		let outputs = self.traces.outputs;
 		let registers = self.fcn_config.input_regs.clone();
 		match backend {
-			Synthesiser::BruteForce => {
+			Synthesiser::Tree => {
 				let mut synthesis = synth_tree::Synthesis::default(&registers);
-				synthesis.brute_force(inputs, outputs);
-			},
-			Synthesiser::HammingScore => {
-				let mut synthesis = synth_tree::Synthesis::default(&registers);
-				synthesis.hamming_score(inputs, outputs);
-			},
-			Synthesiser::HammingScoreAsync => {
-				let mut synthesis = synth_tree::Synthesis::default(&registers);
-				synthesis.hamming_score_async(inputs, outputs);
+				synthesis.synthesize(inputs, outputs);
+				//synth_tree::Synthesis::synthesize(inputs, outputs);
 			},
 			Synthesiser::LibEvoasm => {
 				println!("not implemented");

@@ -47,8 +47,8 @@ struct Node {
 
 #[derive(Debug)]
 pub struct Synthesis {
-	max_runs: usize,
-	threads: usize,
+	n_runs: usize,
+	n_threads: usize,
 	tree: Vec<Node>,
 	queue: Vec<usize>,
 	terms: Vec<Expression>,
@@ -59,8 +59,8 @@ pub struct Synthesis {
 impl Synthesis {
 	pub fn default(registers: &Vec<String>) -> Synthesis {
 		let mut result = Synthesis {
-			threads: 1,
-			max_runs: 3,
+			n_runs: 3,
+			n_threads: 1,
 			tree: vec![Node {
 				expression: Expression::NonTerminal,
 				score: Score::UnSat,
@@ -78,9 +78,11 @@ impl Synthesis {
 	}
 
 	pub fn synthesize(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
-		
+		let workers = AtomicWorker::setup_workers(self.n_runs, self.n_threads);
 	}
-	
+}
+
+impl AtomicWorker {	
 	fn setup_workers(n_runs: usize, n_workers: usize) -> Vec<AtomicWorker> {
 		let mut result: Vec<AtomicWorker> = Vec::new();
 		for _ in 0..n_workers {
@@ -98,7 +100,6 @@ impl Synthesis {
 		return result
 	}
 }
-
 /*
 impl Node {
 	fn score_node(&mut self, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>, scoring: &Score) {

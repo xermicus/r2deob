@@ -117,7 +117,7 @@ impl Session {
 		match backend {
 			Synthesiser::Tree => {
 				let mut synthesis = synth_tree::Synthesis::default(&registers);
-				synthesis.synthesize(inputs, outputs);
+				synthesis.synthesize(&inputs, &outputs);
 				//synth_tree::Synthesis::synthesize(inputs, outputs);
 			},
 			Synthesiser::LibEvoasm => {

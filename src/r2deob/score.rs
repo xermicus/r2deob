@@ -10,6 +10,10 @@ pub enum Score {
 	UnSat,
 }
 
+impl Default for Score {
+	fn default() -> Self { Score::Unknown }
+}
+
 impl Score {
 	pub fn hamming_distance(result_test: u64, result_true: u64) -> Score {
 		Score::HammingDistance(1.0 - (result_test ^ result_true).count_ones() as f32 / 64.0)

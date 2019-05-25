@@ -15,14 +15,14 @@ use super::score::Score;
 use super::sat_interface::Op;
 use super::sat_interface::Sat;
 
-#[derive(Debug)]
+#[derive(Debug,Default)]
 struct WorkerResult {
 	score: Score,
 	node: usize,
 	model: HashMap<String,u64>
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug)]
 struct WorkerTask {
 	expression: Expression,
 	node: usize
@@ -32,7 +32,7 @@ struct WorkerTask {
 struct AtomicWorker {
 	tx: Sender<WorkerTask>,
 	rx: Receiver<WorkerResult>,
-	handle: JoinHandle<()>
+	handle: JoinHandle<()>,
 }
 
 #[derive(Debug)]
@@ -53,7 +53,28 @@ pub struct Synthesis {
 	queue: Vec<usize>,
 	terms: Vec<Expression>,
 	scoring: Score,
-	solver: Sat
+}
+
+impl WorkerTask {
+	pub fn work(inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>, exp: &Expression) -> WorkerResult {
+		let mut result =  WorkerResult::default();
+		if let Some(model) = WorkerTask::check_sat(exp.clone()) {
+			result.model = model
+		} else {
+			return result
+		}
+		let eval = WorkerTask::eval_expression(inputs, exp.clone());
+		result.score = Score::Combined(outputs, eval);
+		result
+	}
+
+	fn check_sat(exp: Expression) -> Option<HashMap<String,u64>> {
+		None
+	}
+
+	fn eval_expression(inputs: &Vec<HashMap<String,String>>, exp: Expression) -> HashMap<String,u64> {
+		HashMap::new()
+	}
 }
 
 impl Synthesis {
@@ -69,37 +90,48 @@ impl Synthesis {
 				next: Vec::new(),
 				sat_model: Vec::new()
 			}],
-			queue: vec![],
+			queue: vec![0],
 			terms: Expression::combinations(registers),
 			scoring: Score::Combined(0.0),
-			solver: Sat::init(),
 		};
 		result
 	}
 
-	pub fn synthesize(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
-		let workers = AtomicWorker::setup_workers(self.n_runs, self.n_threads);
+	pub fn synthesize(&mut self, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>) {
+		let workers = AtomicWorker::setup_workers(self.n_threads, inputs, outputs);
 	}
 }
 
 impl AtomicWorker {	
-	fn setup_workers(n_runs: usize, n_workers: usize) -> Vec<AtomicWorker> {
+	fn setup_workers(n_workers: usize, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>) -> Vec<AtomicWorker> {
 		let mut result: Vec<AtomicWorker> = Vec::new();
 		for _ in 0..n_workers {
 			let (task_tx, task_rx) = channel::<WorkerTask>();
 			let (result_tx, result_rx) = channel::<WorkerResult>();
+			let input = inputs.clone();
+			let output = outputs.clone();
 			let handle = thread::spawn(move|| {
-				//tx.send(1).expect("channel will be there waiting for the pool");
+				let sat = Sat::init();
+				loop {
+					if let Ok(task) = task_rx.recv() {
+						let mut result = WorkerTask::work(&input, &output, &task.expression);
+						result.node = task.node;
+						result_tx.send(result).unwrap();
+					} else {
+						break;
+					}
+				}
 			});
 			result.push(AtomicWorker {
 				tx: task_tx,
 				rx: result_rx,
-				handle: handle
+				handle: handle,
 			});
 		}
 		return result
 	}
 }
+
 /*
 impl Node {
 	fn score_node(&mut self, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>, scoring: &Score) {

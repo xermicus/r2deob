@@ -31,8 +31,8 @@ impl Expression {
 		}
 	}
 
-	pub fn is_finite(expression: &mut Expression) -> bool {
-		match expression {
+	pub fn is_finite(&mut self) -> bool {
+		match self {
 			Expression::NonTerminal => return false,
 			Expression::Operation(_, a, b) => {
 				return Expression::is_finite(&mut *a.clone()) & Expression::is_finite(&mut *b.clone())

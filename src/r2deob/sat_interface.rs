@@ -125,7 +125,7 @@ impl ::std::fmt::Display for Op {
 }
 
 pub struct Sat {
-	solver: Solver<Parser>,
+	pub solver: Solver<Parser>,
 }
 
 impl Sat {
@@ -133,7 +133,6 @@ impl Sat {
 		let mut result = Sat {
 			solver: Solver::default(Parser).unwrap()
 		};
-		result.solver.declare_const("n", "BitVec").unwrap();
 		result.solver.declare_const("U", "BitVec").unwrap();
 		result
 	}
@@ -144,14 +143,30 @@ impl Sat {
 		if let Ok(sat) = self.solver.check_sat() {
 			if let Ok(model) = self.solver.get_model_const() {
 				for (ident, typ, value) in model {
-					match value {
-						//Cst::I(i) => result.push((ident.to_string(), i as u64)),
-						_ => {}
-					}
+					result.push((ident,0));
 				}
 			}
 		}
 		result
+	}
+
+	pub fn check_sat(&mut self, exp: String, inputs: &Vec<HashMap<String,String>>) -> Option<HashMap<String,u64>> {
+		let mut constraints: Vec<String> = Vec::new();
+		for i in inputs.iter() {
+			let mut constraint = exp.clone();
+			for (reg, value) in i.iter() {
+				constraint = constraint.replace(reg, value);
+			}
+			constraints.push(constraint);
+		}
+		println!("{:?}", constraints);
+		for c in constraints.iter() {
+			self.solver.assert(c).unwrap();
+		}
+		if !self.solver.check_sat().unwrap() {
+			return None
+		}
+		None
 	}
 }
 

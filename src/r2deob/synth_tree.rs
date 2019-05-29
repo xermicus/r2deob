@@ -56,30 +56,31 @@ pub struct Synthesis {
 }
 
 impl WorkerTask {
-	pub fn work(inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>, exp: &Expression) -> WorkerResult {
+	pub fn work(sat: Option<&mut Sat>, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>, exp: &Expression) -> WorkerResult {
 		let mut result =  WorkerResult::default();
-		if let Some(model) = WorkerTask::check_sat(exp.clone()) {
-			result.model = model
-		} else {
+
+		// Satisfiability checks
+		if let Some(s) = sat {
+			if let Some(model) = Sat::check_sat(s, exp.math_notation(), inputs) {
+				result.model = model
+			} else {
+				result.score = Score::UnSat;
+				return result
+			}
+		} else if !exp.clone().is_finite() {
+			result.score = Score::UnSat;
 			return result
 		}
-		let eval = WorkerTask::eval_expression(inputs, exp.clone());
-		result.score = Score::Combined(outputs, eval);
+
+		let result_tests: Vec<u64> = Vec::new();
+		result.score = Score::get(Vec::new(), outputs.to_vec());
 		result
-	}
-
-	fn check_sat(exp: Expression) -> Option<HashMap<String,u64>> {
-		None
-	}
-
-	fn eval_expression(inputs: &Vec<HashMap<String,String>>, exp: Expression) -> HashMap<String,u64> {
-		HashMap::new()
 	}
 }
 
 impl Synthesis {
 	pub fn default(registers: &Vec<String>) -> Synthesis {
-		let mut result = Synthesis {
+		Synthesis {
 			n_runs: 3,
 			n_threads: 1,
 			tree: vec![Node {
@@ -93,8 +94,7 @@ impl Synthesis {
 			queue: vec![0],
 			terms: Expression::combinations(registers),
 			scoring: Score::Combined(0.0),
-		};
-		result
+		}
 	}
 
 	pub fn synthesize(&mut self, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>) {
@@ -111,10 +111,10 @@ impl AtomicWorker {
 			let input = inputs.clone();
 			let output = outputs.clone();
 			let handle = thread::spawn(move|| {
-				let sat = Sat::init();
+				let mut sat = Sat::init();
 				loop {
 					if let Ok(task) = task_rx.recv() {
-						let mut result = WorkerTask::work(&input, &output, &task.expression);
+						let mut result = WorkerTask::work(Some(&mut sat), &input, &output, &task.expression);
 						result.node = task.node;
 						result_tx.send(result).unwrap();
 					} else {

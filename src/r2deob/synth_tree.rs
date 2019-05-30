@@ -56,7 +56,7 @@ pub struct Synthesis {
 }
 
 impl WorkerTask {
-	pub fn work(sat: Option<&mut Sat>, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>, exp: &Expression) -> WorkerResult {
+	pub fn work(sat: Option<&mut Sat>, inputs: &Vec<HashMap<String,u64>>, outputs: &Vec<u64>, exp: &Expression) -> WorkerResult {
 		let mut result =  WorkerResult::default();
 
 		// Satisfiability checks
@@ -73,7 +73,7 @@ impl WorkerTask {
 		}
 
 		let result_tests: Vec<u64> = Vec::new();
-		result.score = Score::get(Vec::new(), outputs.to_vec());
+		result.score = Score::get(result_tests, outputs.to_vec());
 		result
 	}
 }
@@ -97,13 +97,13 @@ impl Synthesis {
 		}
 	}
 
-	pub fn synthesize(&mut self, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>) {
+	pub fn synthesize(&mut self, inputs: &Vec<HashMap<String,u64>>, outputs: &Vec<u64>) {
 		let workers = AtomicWorker::setup_workers(self.n_threads, inputs, outputs);
 	}
 }
 
 impl AtomicWorker {	
-	fn setup_workers(n_workers: usize, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>) -> Vec<AtomicWorker> {
+	fn setup_workers(n_workers: usize, inputs: &Vec<HashMap<String,u64>>, outputs: &Vec<u64>) -> Vec<AtomicWorker> {
 		let mut result: Vec<AtomicWorker> = Vec::new();
 		for _ in 0..n_workers {
 			let (task_tx, task_rx) = channel::<WorkerTask>();
@@ -130,6 +130,32 @@ impl AtomicWorker {
 		}
 		return result
 	}
+}
+
+#[test]
+fn worker_test() {
+	let ast = Expression::Operation(
+		Op::Add,
+		Box::new(Expression::Terminal("rax".to_string())),
+		Box::new(Expression::Operation(
+			Op::Sub,
+			Box::new(Expression::Terminal("rbx".to_string())),
+			Box::new(Expression::Terminal("rcx".to_string()))
+		))
+	);
+	let mut input = HashMap::new();
+	input.insert("rax".to_string(), 20);
+	input.insert("rbx".to_string(), 2);
+	input.insert("rcx".to_string(), 2);
+	let mut inputs = vec![
+		input
+	];
+	let mut input = HashMap::new();
+	input.insert("rax".to_string(), 10);
+	input.insert("rbx".to_string(), 2);
+	input.insert("rcx".to_string(), 2);
+	let result = WorkerTask::work(None, &inputs, &vec![20, 10], &ast);
+	assert_eq!(result.score, Score::Combined(1.0))
 }
 
 /*

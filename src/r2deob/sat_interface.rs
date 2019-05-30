@@ -131,9 +131,9 @@ pub struct Sat {
 impl Sat {
 	pub fn init() -> Sat {
 		let mut result = Sat {
-			solver: Solver::default(Parser).unwrap()
+			solver: Solver::default(Parser).expect("during Solver::default")
 		};
-		result.solver.declare_const("U", "BitVec").unwrap();
+		result.solver.declare_const("U", "BitVec").expect("during constant declaration in Sat::init");
 		result
 	}
 
@@ -150,20 +150,20 @@ impl Sat {
 		result
 	}
 
-	pub fn check_sat(&mut self, exp: String, inputs: &Vec<HashMap<String,String>>) -> Option<HashMap<String,u64>> {
+	pub fn check_sat(&mut self, exp: String, inputs: &Vec<HashMap<String,u64>>) -> Option<HashMap<String,u64>> {
 		let mut constraints: Vec<String> = Vec::new();
 		for i in inputs.iter() {
 			let mut constraint = exp.clone();
 			for (reg, value) in i.iter() {
-				constraint = constraint.replace(reg, value);
+				constraint = constraint.replace(reg, &value.to_string());
 			}
 			constraints.push(constraint);
 		}
 		println!("{:?}", constraints);
 		for c in constraints.iter() {
-			self.solver.assert(c).unwrap();
+			self.solver.assert(c).expect("during constraint assertion in Sat::check_sat");
 		}
-		if !self.solver.check_sat().unwrap() {
+		if !self.solver.check_sat().expect("during satisfiability checking in Sat::check_sat") {
 			return None
 		}
 		None

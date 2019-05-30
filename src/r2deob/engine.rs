@@ -111,7 +111,7 @@ impl Session {
 	}
 
 	pub fn deobfuscate(self, backend: Synthesiser) {
-		let inputs = self.traces.inputs_as_str();
+		let inputs = self.traces.inputs;
 		let outputs = self.traces.outputs;
 		let registers = self.fcn_config.input_regs.clone();
 		match backend {

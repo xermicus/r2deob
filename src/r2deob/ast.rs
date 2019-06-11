@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use enum_iterator::IntoEnumIterator;
 
 use super::sat_interface::Op;
@@ -39,6 +41,26 @@ impl Expression {
 			},
 			_ => return true
 		}
+	}
+	
+	pub fn eval(&self, input: &HashMap<String,Vec<u64>>) -> Option<Vec<u64>> {
+		let mut result: u64;
+		match &self {
+			Expression::Terminal(x) => return parse_registers(&x, input),
+			Expression::Operation(op, a, b) => {
+				let x: Vec<u64>;
+				if let Some(value) = Expression::eval(a, input) {
+					x = value;
+				} else { return None }
+				let y: Vec<u64>;
+				if let Some(value) = Expression::eval(b, input) {
+					y = value;
+				} else { return None }
+				return calc(op, x, y)
+			},
+			_ => return None
+		}
+		None
 	}
 
 	pub fn combinations(registers: &Vec<String>) -> Vec<Expression> {
@@ -86,8 +108,20 @@ impl Expression {
 	}
 }
 
+fn parse_registers(register: &String, inputs: &HashMap<String,Vec<u64>>) -> Option<Vec<u64>> {
+	if !inputs.contains_key(register) {
+		return None
+	}
+	Some(inputs[register].clone())
+}
+
+fn calc(op: &Op, a: Vec<u64>, b: Vec<u64>) -> Option<Vec<u64>> {
+	// TODO
+	None
+}
+
 #[test]
-fn ast_test() {
+fn ast_test_format() {
 	let ast = Expression::Operation(
 		Op::Add,
 		Box::new(Expression::Terminal("rax".to_string())),
@@ -98,4 +132,18 @@ fn ast_test() {
 		))
 	);
     assert_eq!("(+ rax (- U x))", format!("{}", ast));
+}
+
+#[test]
+fn ast_test_math_notation() {
+	let ast = Expression::Operation(
+		Op::Add,
+		Box::new(Expression::Terminal("rax".to_string())),
+		Box::new(Expression::Operation(
+			Op::Sub,
+			Box::new(Expression::NonTerminal),
+			Box::new(Expression::Constant)
+		))
+	);
+    assert_eq!("(rax + (U - x))", ast.math_notation());
 }

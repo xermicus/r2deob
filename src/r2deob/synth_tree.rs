@@ -59,15 +59,7 @@ impl WorkerTask {
 	pub fn work(sat: Option<&mut Sat>, inputs: &Vec<HashMap<String,u64>>, outputs: &Vec<u64>, exp: &Expression) -> WorkerResult {
 		let mut result =  WorkerResult::default();
 
-		// Satisfiability checks
-		if let Some(s) = sat {
-			if let Some(model) = Sat::check_sat(s, exp.math_notation(), inputs) {
-				result.model = model
-			} else {
-				result.score = Score::UnSat;
-				return result
-			}
-		} else if !exp.clone().is_finite() {
+		if !exp.clone().is_finite() {
 			result.score = Score::UnSat;
 			return result
 		}
@@ -133,7 +125,7 @@ impl AtomicWorker {
 }
 
 #[test]
-fn worker_test() {
+fn worker_test_finite_perfect_expression() {
 	let ast = Expression::Operation(
 		Op::Add,
 		Box::new(Expression::Terminal("rax".to_string())),
@@ -143,121 +135,23 @@ fn worker_test() {
 			Box::new(Expression::Terminal("rcx".to_string()))
 		))
 	);
+	let mut inputs = Vec::new();
 	let mut input = HashMap::new();
 	input.insert("rax".to_string(), 20);
 	input.insert("rbx".to_string(), 2);
 	input.insert("rcx".to_string(), 2);
-	let mut inputs = vec![
-		input
-	];
+	inputs.push(input);
 	let mut input = HashMap::new();
 	input.insert("rax".to_string(), 10);
 	input.insert("rbx".to_string(), 2);
 	input.insert("rcx".to_string(), 2);
+	inputs.push(input);
+
 	let result = WorkerTask::work(None, &inputs, &vec![20, 10], &ast);
 	assert_eq!(result.score, Score::Combined(1.0))
 }
 
 /*
-impl Node {
-	fn score_node(&mut self, inputs: &Vec<HashMap<String,String>>, outputs: &Vec<u64>, scoring: &Score) {
-		let mut result: Vec<u64> = Vec::new();
-		match self.expression {
-			Expression::Operation(_,_,_) => {
-				for i in 0..inputs.len() {
-					let mut exp: String = format!("(= {} n)", &self.expression);
-					for (register, value) in inputs[i].iter() {
-						exp = exp.replace(register, value);
-					}
-					//println!("{}",exp);
-					let mut model: Vec<(String,u64)> = Vec::new();
-					if Expression::is_finite(&mut self.expression) {
-						// TODO: Maybe a simple evaluator will be faster
-						model = Sat::init().eval(&exp);
-					} else {
-						// TODO: Slow
-						//model = Sat::init().eval(exp);
-					}
-					if model.len() > 0 {
-						//self.update_score(model, outputs[i], scoring);
-						self.sat_model = model.clone();
-						let mut yielded: Option<u64> = None;
-						for p in model.iter() {
-							match p.0.as_ref() {
-								"n" => yielded = Some(p.1),
-								_ => {}
-							} 
-						}
-						if let Some(y) = yielded {
-							let real = outputs[i];
-							match scoring {
-								Score::Combined(_) => self.score = Score::combined(y, real),
-								Score::HammingDistance(_)=> self.score = Score::hamming_distance(y, real),
-								Score::AbsDistance(_) => self.score = Score::abs_distance(y, real),
-								Score::RangeDistance(_) => self.score = Score::range_distance(y, real),
-								_ => {}
-							}
-						} else {
-							self.score = Score::UnSat;
-						}
-					} else {
-						self.score = Score::UnSat;
-					}
-				}
-			},
-			_ => return
-		}
-	}
-}
-
-impl Synthesis {
-	pub fn default(registers: &Vec<String>) -> Synthesis {
-		let mut result = Synthesis {
-			max_runs: 3,
-			tree: vec![Node {
-				expression: Expression::NonTerminal,
-				score: Score::UnSat,
-				index: 0,
-				prev: 0,
-				next: Vec::new(),
-				sat_model: Vec::new()
-			}],
-			queue: vec![0],
-			terms: Expression::combinations(registers),
-			scoring: Score::Combined(0.0),
-			solver: Sat::init(),
-		};
-		result.derive_node(0);
-		result
-	}
-
-	pub fn hamming_score_async(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
-		for _ in 0..self.max_runs {
-			//println!("{:?}", self.queue);
-			//println!("{:?}", self.tree);
-			//if let Some(i) = self.queue.get(0) {
-			//	if self.tree.get(i.clone()).unwrap().next.len() < 1 {
-			//		self.derive_node(*i);
-			//	}
-			//}
-			for i in self.queue.clone().iter() {
-				
-			}
-			self.update_queue();
-			for n in self.tree[self.queue[0]].next.clone().iter() {
-				
-				self.tree[n.clone()].score_node(&inputs, &outputs, &self.scoring);
-				//self.update_parents(n.clone());
-			}
-		}
-	}
-
-	pub fn brute_force(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
-	}
-
-	pub fn hamming_score(&mut self, inputs: Vec<HashMap<String,String>>, outputs: Vec<u64>) {
-	}
-
 	pub fn derive_node(&mut self, node: usize) {
 		let expression = &self.tree.get(node).unwrap().expression;
 		let expressions: Vec<Expression> = Expression::derive(&mut expression.clone(), &self.terms);
@@ -274,23 +168,4 @@ impl Synthesis {
 			self.tree[node].next.push(index);
 		}
 	}
-
-	fn update_queue(&mut self) {
-		let mut copy: Vec<(usize,f32)> = Vec::new();
-		for n in self.tree.iter() {
-			match &n.score {
-				Score::HammingDistance(s) => copy.push((n.index, *s)),
-				Score::AbsDistance(s) => copy.push((n.index, *s)),
-				Score::RangeDistance(s) => copy.push((n.index, *s)),
-				Score::Combined(s) => copy.push((n.index, *s)),
-				_ => copy.push((n.index, 0.0))
-			}
-		}
-		copy.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-		self.queue = copy.iter().map(|s| s.0).collect();
-	}
-
-	fn update_parents(&mut self, node: usize) {
-		
-	}
-}*/
+*/

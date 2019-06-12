@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use enum_iterator::IntoEnumIterator;
 
-use super::sat_interface::Op;
+use super::calc::Operator;
 
 #[derive(Debug, Clone)]
 pub enum Expression {
 	Terminal(String),
 	NonTerminal,
 	Constant,
-	Operation(Op, Box<Expression>, Box<Expression>)
+	Operation(Operator, Box<Expression>, Box<Expression>)
 }
 
 impl ::std::fmt::Display for Expression {
@@ -33,7 +33,7 @@ impl Expression {
 		}
 	}
 
-	pub fn is_finite(&mut self) -> bool {
+	pub fn is_finite(&self) -> bool {
 		match self {
 			Expression::NonTerminal => return false,
 			Expression::Operation(_, a, b) => {
@@ -56,11 +56,10 @@ impl Expression {
 				if let Some(value) = Expression::eval(b, input) {
 					y = value;
 				} else { return None }
-				return calc(op, x, y)
+				return op.perform(x.iter().map(|x| *x as i64).collect(), y.iter().map(|x| *x as i64).collect())
 			},
 			_ => return None
 		}
-		None
 	}
 
 	pub fn combinations(registers: &Vec<String>) -> Vec<Expression> {
@@ -68,11 +67,11 @@ impl Expression {
 		for reg in registers {
 			result.push(Expression::Terminal(reg.clone()));
 		}
-		for op in Op::into_enum_iter().filter(|x| !x.to_string().contains('=')) {
+		for op in Operator::into_enum_iter().filter(|x| !x.to_string().contains('=')) {
 			result.push(Expression::Operation(op, Box::new(Expression::NonTerminal), Box::new(Expression::NonTerminal)));
 		}
 		for reg in registers {
-			for op in Op::into_enum_iter().filter(|x| !x.to_string().contains('=')) {
+			for op in Operator::into_enum_iter().filter(|x| !x.to_string().contains('=')) {
 				result.push(Expression::Operation(op, Box::new(Expression::Terminal(reg.clone())), Box::new(Expression::NonTerminal)));
 				result.push(Expression::Operation(op, Box::new(Expression::NonTerminal), Box::new(Expression::Terminal(reg.clone()))));
 			}
@@ -115,18 +114,13 @@ fn parse_registers(register: &String, inputs: &HashMap<String,Vec<u64>>) -> Opti
 	Some(inputs[register].clone())
 }
 
-fn calc(op: &Op, a: Vec<u64>, b: Vec<u64>) -> Option<Vec<u64>> {
-	// TODO
-	None
-}
-
 #[test]
 fn ast_test_format() {
 	let ast = Expression::Operation(
-		Op::Add,
+	Operator::Add,
 		Box::new(Expression::Terminal("rax".to_string())),
 		Box::new(Expression::Operation(
-			Op::Sub,
+			Operator::Sub,
 			Box::new(Expression::NonTerminal),
 			Box::new(Expression::Constant)
 		))
@@ -137,10 +131,10 @@ fn ast_test_format() {
 #[test]
 fn ast_test_math_notation() {
 	let ast = Expression::Operation(
-		Op::Add,
+		Operator::Add,
 		Box::new(Expression::Terminal("rax".to_string())),
 		Box::new(Expression::Operation(
-			Op::Sub,
+			Operator::Sub,
 			Box::new(Expression::NonTerminal),
 			Box::new(Expression::Constant)
 		))

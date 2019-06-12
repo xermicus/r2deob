@@ -12,8 +12,9 @@ use std::sync::mpsc::Receiver;
 
 use super::ast::Expression;
 use super::score::Score;
-use super::sat_interface::Op;
+//use super::sat_interface::Op;
 use super::sat_interface::Sat;
+use super::calc::Operator;
 
 #[derive(Debug,Default)]
 struct WorkerResult {
@@ -59,7 +60,7 @@ impl WorkerTask {
 	pub fn work(sat: Option<&mut Sat>, inputs: &Vec<HashMap<String,u64>>, outputs: &Vec<u64>, exp: &Expression) -> WorkerResult {
 		let mut result =  WorkerResult::default();
 
-		if !exp.clone().is_finite() {
+		if !exp.is_finite() {
 			result.score = Score::UnSat;
 			return result
 		}
@@ -127,10 +128,10 @@ impl AtomicWorker {
 #[test]
 fn worker_test_finite_perfect_expression() {
 	let ast = Expression::Operation(
-		Op::Add,
+		Operator::Add,
 		Box::new(Expression::Terminal("rax".to_string())),
 		Box::new(Expression::Operation(
-			Op::Sub,
+			Operator::Sub,
 			Box::new(Expression::Terminal("rbx".to_string())),
 			Box::new(Expression::Terminal("rcx".to_string()))
 		))

@@ -47,7 +47,6 @@ impl Expression {
 	}
 	
 	pub fn eval(&self, input: &HashMap<String,Vec<OP_T>>) -> Option<Vec<OP_T>> {
-		let mut result: OP_T;
 		match &self {
 			Expression::Terminal(x) => return parse_registers(&x, input),
 			Expression::Operation(op, a, b) => {
@@ -118,7 +117,7 @@ fn parse_registers(register: &String, inputs: &HashMap<String,Vec<OP_T>>) -> Opt
 }
 
 #[test]
-fn ast_test_format() {
+fn test_format() {
 	let ast = Expression::Operation(
 	Operator::Add,
 		Box::new(Expression::Terminal("rax".to_string())),
@@ -132,7 +131,7 @@ fn ast_test_format() {
 }
 
 #[test]
-fn ast_test_math_notation() {
+fn test_math_notation() {
 	let ast = Expression::Operation(
 		Operator::Add,
 		Box::new(Expression::Terminal("rax".to_string())),
@@ -143,4 +142,32 @@ fn ast_test_math_notation() {
 		))
 	);
     assert_eq!("(rax + (U - x))", ast.math_notation());
+}
+
+#[test]
+fn test_eval_easy() {
+	let ast = Expression::Terminal("rax".to_string());
+	let mut inputs: HashMap<String,Vec<OP_T>> = HashMap::new();
+	inputs.insert("rax".to_string(), vec![1,2,3]);
+	let result = ast.eval(&inputs).unwrap();
+	assert!(result == vec![1,2,3], format!("Test result was: {:?}", result));
+}
+
+#[test]
+fn test_eval() {
+	let ast = Expression::Operation(
+		Operator::Mul,
+		Box::new(Expression::Terminal("rax".to_string())),
+		Box::new(Expression::Operation(
+			Operator::Div,
+			Box::new(Expression::Terminal("rbx".to_string())),
+			Box::new(Expression::Terminal("rcx".to_string())),
+		))
+	);
+	let mut inputs: HashMap<String,Vec<OP_T>> = HashMap::new();
+	inputs.insert("rax".to_string(), vec![1,2,3]);
+	inputs.insert("rbx".to_string(), vec![1,4,9]);
+	inputs.insert("rcx".to_string(), vec![1,2,3]);
+	let result = ast.eval(&inputs).unwrap();
+	assert!(result == vec![1,4,9], format!("Test result was: {:?}", result));
 }

@@ -4,8 +4,11 @@ use r2pipe::R2Pipe;
 extern crate rand;
 use rand::prelude::random;
 
-use super::synth_tree;
-use super::R2Error;
+use super::{
+	synth_tree,
+	R2Error,
+	OP_T,
+};
 
 use std::collections::HashMap;
 
@@ -29,8 +32,8 @@ pub struct FcnConfig {
 }
 
 pub struct Traces {
-	pub inputs: Vec<HashMap<String,u64>>,
-	pub outputs: Vec<u64>,
+	pub inputs: Vec<HashMap<String,OP_T>>,
+	pub outputs: Vec<OP_T>,
 }
 
 impl Traces {

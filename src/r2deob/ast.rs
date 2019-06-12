@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use enum_iterator::IntoEnumIterator;
 
-use super::calc::Operator;
+use super::{
+	calc::Operator,
+	OP_T,
+};
 
 #[derive(Debug, Clone)]
 pub enum Expression {
@@ -43,20 +46,20 @@ impl Expression {
 		}
 	}
 	
-	pub fn eval(&self, input: &HashMap<String,Vec<u64>>) -> Option<Vec<u64>> {
-		let mut result: u64;
+	pub fn eval(&self, input: &HashMap<String,Vec<OP_T>>) -> Option<Vec<OP_T>> {
+		let mut result: OP_T;
 		match &self {
 			Expression::Terminal(x) => return parse_registers(&x, input),
 			Expression::Operation(op, a, b) => {
-				let x: Vec<u64>;
+				let x: Vec<OP_T>;
 				if let Some(value) = Expression::eval(a, input) {
 					x = value;
 				} else { return None }
-				let y: Vec<u64>;
+				let y: Vec<OP_T>;
 				if let Some(value) = Expression::eval(b, input) {
 					y = value;
 				} else { return None }
-				return op.perform(x.iter().map(|x| *x as i64).collect(), y.iter().map(|x| *x as i64).collect())
+				return op.perform(x, y)
 			},
 			_ => return None
 		}
@@ -107,7 +110,7 @@ impl Expression {
 	}
 }
 
-fn parse_registers(register: &String, inputs: &HashMap<String,Vec<u64>>) -> Option<Vec<u64>> {
+fn parse_registers(register: &String, inputs: &HashMap<String,Vec<OP_T>>) -> Option<Vec<OP_T>> {
 	if !inputs.contains_key(register) {
 		return None
 	}

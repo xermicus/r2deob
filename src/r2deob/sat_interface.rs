@@ -10,6 +10,7 @@ use enum_iterator::IntoEnumIterator;
 
 use super::ast::Expression;
 use super::score::Score;
+use crate::r2deob::OP_T;
 
 /// Empty parser structure, we will not maintain any context.
 #[derive(Clone, Copy)]
@@ -137,8 +138,8 @@ impl Sat {
 		result
 	}
 
-	pub fn eval(&mut self, expression: &String) -> Vec<(String,u64)> {
-		let mut result: Vec<(String,u64)> = Vec::new();
+	pub fn eval(&mut self, expression: &String) -> Vec<(String,OP_T)> {
+		let mut result: Vec<(String,OP_T)> = Vec::new();
 		self.solver.assert(&expression).unwrap();
 		if let Ok(sat) = self.solver.check_sat() {
 			if let Ok(model) = self.solver.get_model_const() {
@@ -150,7 +151,7 @@ impl Sat {
 		result
 	}
 
-	pub fn check_sat(&mut self, exp: String, inputs: &Vec<HashMap<String,u64>>) -> Option<HashMap<String,u64>> {
+	pub fn check_sat(&mut self, exp: String, inputs: &Vec<HashMap<String,OP_T>>) -> Option<HashMap<String,OP_T>> {
 		let mut constraints: Vec<String> = Vec::new();
 		for i in inputs.iter() {
 			let mut constraint = exp.clone();

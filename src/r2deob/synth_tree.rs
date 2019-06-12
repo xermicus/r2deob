@@ -3,24 +3,28 @@ use rayon::prelude::*;
 
 use rsmt2::SmtRes;
 
-use std::collections::HashMap;
-use std::thread;
-use std::thread::JoinHandle;
-use std::sync::mpsc::channel;
-use std::sync::mpsc::Sender;
-use std::sync::mpsc::Receiver;
+use std::{
+	collections::HashMap,
+	thread,
+	thread::JoinHandle,
+	sync::mpsc::channel,
+	sync::mpsc::Sender,
+	sync::mpsc::Receiver,
+};
 
-use super::ast::Expression;
-use super::score::Score;
-//use super::sat_interface::Op;
-use super::sat_interface::Sat;
-use super::calc::Operator;
+use super::{
+	ast::Expression,
+	score::Score,
+	sat_interface::Sat,
+	calc::Operator,
+	OP_T,
+};
 
 #[derive(Debug,Default)]
 struct WorkerResult {
 	score: Score,
 	node: usize,
-	model: HashMap<String,u64>
+	model: HashMap<String,OP_T>
 }
 
 #[derive(Debug)]
@@ -43,7 +47,7 @@ struct Node {
 	index: usize,
 	prev: usize,
 	next: Vec<usize>,
-	sat_model: Vec<(String,u64)>
+	sat_model: Vec<(String,OP_T)>
 }
 
 #[derive(Debug)]
@@ -57,7 +61,7 @@ pub struct Synthesis {
 }
 
 impl WorkerTask {
-	pub fn work(sat: Option<&mut Sat>, inputs: &Vec<HashMap<String,u64>>, outputs: &Vec<u64>, exp: &Expression) -> WorkerResult {
+	pub fn work(sat: Option<&mut Sat>, inputs: &Vec<HashMap<String,OP_T>>, outputs: &Vec<OP_T>, exp: &Expression) -> WorkerResult {
 		let mut result =  WorkerResult::default();
 
 		if !exp.is_finite() {
@@ -65,7 +69,7 @@ impl WorkerTask {
 			return result
 		}
 
-		let result_tests: Vec<u64> = Vec::new();
+		let result_tests: Vec<OP_T> = Vec::new();
 		result.score = Score::get(result_tests, outputs.to_vec());
 		result
 	}
@@ -90,13 +94,13 @@ impl Synthesis {
 		}
 	}
 
-	pub fn synthesize(&mut self, inputs: &Vec<HashMap<String,u64>>, outputs: &Vec<u64>) {
+	pub fn synthesize(&mut self, inputs: &Vec<HashMap<String,OP_T>>, outputs: &Vec<OP_T>) {
 		let workers = AtomicWorker::setup_workers(self.n_threads, inputs, outputs);
 	}
 }
 
 impl AtomicWorker {	
-	fn setup_workers(n_workers: usize, inputs: &Vec<HashMap<String,u64>>, outputs: &Vec<u64>) -> Vec<AtomicWorker> {
+	fn setup_workers(n_workers: usize, inputs: &Vec<HashMap<String,OP_T>>, outputs: &Vec<OP_T>) -> Vec<AtomicWorker> {
 		let mut result: Vec<AtomicWorker> = Vec::new();
 		for _ in 0..n_workers {
 			let (task_tx, task_rx) = channel::<WorkerTask>();

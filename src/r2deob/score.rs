@@ -1,4 +1,5 @@
 use std::cmp;
+use crate::r2deob::OP_T;
 
 #[derive(Debug, PartialEq)]
 pub enum Score {
@@ -15,15 +16,15 @@ impl Default for Score {
 }
 
 impl Score {
-	fn hamming_distance(result_test: u64, result_true: u64) -> Score {
+	fn hamming_distance(result_test: OP_T, result_true: OP_T) -> Score {
 		Score::HammingDistance(1.0 - (result_test ^ result_true).count_ones() as f32 / 64.0)
 	}
 
-	fn abs_distance(result_test: u64, result_true: u64) -> Score {
+	fn abs_distance(result_test: OP_T, result_true: OP_T) -> Score {
 		Score::AbsDistance((cmp::min(result_test, result_true) as f64 / cmp::max(result_test, result_true) as f64) as f32)
 	}
 
-	fn range_distance(result_test: u64, result_true: u64) -> Score {
+	fn range_distance(result_test: OP_T, result_true: OP_T) -> Score {
 		let bytes_test = result_test.to_le_bytes();
 		let bytes_true = result_true.to_le_bytes();
 		let mut result = 0;
@@ -36,7 +37,7 @@ impl Score {
 		Score::RangeDistance(1.0 - result as f32 / 8.0)
 	}
 
-	fn combined(result_test: u64, result_true: u64) -> Score {
+	fn combined(result_test: OP_T, result_true: OP_T) -> Score {
 		let mut result: f32 = 0.0;
 		let mut scores: f32 = 0.0;
 		if let Score::HammingDistance(x) = Score::hamming_distance(result_test, result_true) {
@@ -54,7 +55,7 @@ impl Score {
 		Score::Combined(result / scores)
 	}
 
-	pub fn get(result_test: Vec<u64>, result_true: Vec<u64>) -> Score {
+	pub fn get(result_test: Vec<OP_T>, result_true: Vec<OP_T>) -> Score {
 		let mut result: f32 = 0.0;
 		let mut scores: f32 = 0.0;
 		for i in 0..result_test.len() {

@@ -33,15 +33,15 @@ impl Expression {
 		}
 	}
 
-	pub fn is_finite(&self) -> bool {
-		match self {
-			Expression::NonTerminal => return false,
-			Expression::Operation(_, a, b) => {
-				return Expression::is_finite(&mut *a.clone()) & Expression::is_finite(&mut *b.clone())
-			},
-			_ => return true
-		}
-	}
+	//pub fn is_finite(&self) -> bool {
+	//	match self {
+	//		Expression::NonTerminal => return false,
+	//		Expression::Operation(_, a, b) => {
+	//			return Expression::is_finite(&mut *a.clone()) & Expression::is_finite(&mut *b.clone())
+	//		},
+	//		_ => return true
+	//	}
+	//}
 	
 	pub fn eval(&self, input: &HashMap<String,Vec<BaseT>>) -> Option<Vec<BaseT>> {
 		match &self {
@@ -107,6 +107,7 @@ impl Expression {
 }
 
 fn parse_registers(register: &String, inputs: &HashMap<String,Vec<BaseT>>) -> Option<Vec<BaseT>> {
+	// could maybe left out for performance
 	if !inputs.contains_key(register) {
 		return None
 	}

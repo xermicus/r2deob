@@ -37,9 +37,11 @@ impl Operator {
 	}
 }
 
-trait SimdOperator<T> {
+pub trait SimdOperator<T> {
 	fn simd_add(a: &[T], b: &[T]) -> Vec<T>;
+	fn sisd_add(a: &[T], b: &[T]) -> Vec<T>;
 	fn simd_sub(a: &[T], b: &[T]) -> Vec<T>;
+	fn sisd_sub(a: &[T], b: &[T]) -> Vec<T>;
 	fn simd_mul(a: &[T], b: &[T]) -> Vec<T>;
 	fn simd_div(a: &[T], b: &[T]) -> Vec<T>;
 }
@@ -48,8 +50,14 @@ impl SimdOperator<i64> for Operator {
 	fn simd_add(a: &[i64], b: &[i64]) -> Vec<i64> {
 		return simd_add_i64_compiletime(a, b);
 	}
+	fn sisd_add(a: &[i64], b: &[i64]) -> Vec<i64> {
+		return sisd_add_base_t_iter(a, b);
+	}
 	fn simd_sub(a: &[i64], b: &[i64]) -> Vec<i64> {
 		return simd_sub_i64_compiletime(a, b);
+	}
+	fn sisd_sub(a: &[i64], b: &[i64]) -> Vec<i64> {
+		return sisd_sub_base_t_iter(a, b);
 	}
 	fn simd_mul(a: &[i64], b: &[i64]) -> Vec<i64> {
 		return simd_mul_i64_compiletime(a, b);
@@ -57,6 +65,14 @@ impl SimdOperator<i64> for Operator {
 	fn simd_div(a: &[i64], b: &[i64]) -> Vec<i64> {
 		return simd_div_i64_compiletime(a, b);
 	}
+}
+
+pub fn sisd_add_base_t_iter(a: &[BaseT], b: &[BaseT]) -> Vec<BaseT> {
+	a.iter().zip(b).map(|(x,y)| x + y).collect()
+}
+
+pub fn sisd_sub_base_t_iter(a: &[BaseT], b: &[BaseT]) -> Vec<BaseT> {
+	a.iter().zip(b).map(|(x,y)| x - y).collect()
 }
 
 simd_compiletime_generate!(

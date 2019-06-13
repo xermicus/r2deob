@@ -154,7 +154,26 @@ fn test_eval_easy() {
 }
 
 #[test]
-fn test_eval() {
+fn test_eval_add_sub() {
+	let ast = Expression::Operation(
+		Operator::Add,
+		Box::new(Expression::Terminal("rax".to_string())),
+		Box::new(Expression::Operation(
+			Operator::Sub,
+			Box::new(Expression::Terminal("rbx".to_string())),
+			Box::new(Expression::Terminal("rcx".to_string())),
+		))
+	);
+	let mut inputs: HashMap<String,Vec<OP_T>> = HashMap::new();
+	inputs.insert("rax".to_string(), vec![1,2,3,1,1,1,1,1]);
+	inputs.insert("rbx".to_string(), vec![1,4,9,1,1,1,1,1]);
+	inputs.insert("rcx".to_string(), vec![1,2,3,1,1,1,1,1]);
+	let result = ast.eval(&inputs).unwrap();
+	assert!(result == vec![1,4,9,1,1,1,1,1], format!("Test result was: {:?}", result));
+}
+
+#[test]
+fn test_eval_mul_div() {
 	let ast = Expression::Operation(
 		Operator::Mul,
 		Box::new(Expression::Terminal("rax".to_string())),
@@ -165,9 +184,9 @@ fn test_eval() {
 		))
 	);
 	let mut inputs: HashMap<String,Vec<OP_T>> = HashMap::new();
-	inputs.insert("rax".to_string(), vec![1,2,3]);
-	inputs.insert("rbx".to_string(), vec![1,4,9]);
-	inputs.insert("rcx".to_string(), vec![1,2,3]);
+	inputs.insert("rax".to_string(), vec![1,2,3,1,1,1,1,1]);
+	inputs.insert("rbx".to_string(), vec![1,4,9,1,1,1,1,1]);
+	inputs.insert("rcx".to_string(), vec![1,2,3,1,1,1,1,1]);
 	let result = ast.eval(&inputs).unwrap();
-	assert!(result == vec![1,4,9], format!("Test result was: {:?}", result));
+	assert!(result == vec![1,4,9,1,1,1,1,1], format!("Test result was: {:?}", result));
 }

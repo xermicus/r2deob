@@ -104,7 +104,6 @@ impl Session {
 			Synthesiser::Tree => {
 				let mut synthesis = synth_tree::Synthesis::default(&registers);
 				synthesis.synthesize(&inputs, &outputs);
-				//synth_tree::Synthesis::synthesize(inputs, outputs);
 			},
 		}
 	}

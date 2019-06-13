@@ -1,9 +1,6 @@
 use simdeez::{
 	*,
 	avx2::*,
-	sse2::*,
-	sse41::*,
-	scalar::*,
 };
 
 use enum_iterator::IntoEnumIterator;

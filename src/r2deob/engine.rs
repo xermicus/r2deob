@@ -7,14 +7,13 @@ use rand::prelude::random;
 use super::{
 	synth_tree,
 	R2Error,
-	OP_T,
+	BaseT,
 };
 
 use std::collections::HashMap;
 
 pub enum Synthesiser {
 	Tree,
-	LibEvoasm
 }
 
 pub struct Session {
@@ -32,42 +31,21 @@ pub struct FcnConfig {
 }
 
 pub struct Traces {
-	pub inputs: Vec<HashMap<String,OP_T>>,
-	pub outputs: Vec<OP_T>,
+	pub inputs: HashMap<String,Vec<BaseT>>,
+	pub outputs: Vec<BaseT>,
 }
 
 impl Traces {
 	pub fn push_strings(&mut self, registers: Vec<String>, input: Vec<String>, output: String) -> Result<(), String> {
-		if registers.len() != input.len() { return Err("expected one input for each register".to_string()) };
-
-		let mut inputs = HashMap::new();
-		for i in 0..registers.len() {
-			inputs.insert(registers[i].clone(), input[i].parse().unwrap());
-		};
-		self.inputs.push(inputs);
+		if registers.len() != input.len() {
+			return Err("expected one input for each register".to_string())
+		}
+		for (reg, val) in registers.iter().zip(input) {
+			self.inputs.get_mut(reg).unwrap().push(val.parse().unwrap());
+		}
 		self.outputs.push(output.parse().unwrap());
 		Ok(())
 	}
-
-	pub fn inputs_as_str(&self) -> Vec<HashMap<String,String>> {
-		let mut result: Vec<HashMap<String,String>> = Vec::new();
-		for i in self.inputs.iter() {
-			let mut input: HashMap<String,String> = HashMap::new();
-			for (key, val) in i.clone().iter_mut() {
-				input.insert(key.to_string(), val.to_string());
-			};
-			result.push(input);
-		};
-		result
-	}
-	
-	//pub fn outputs_as_str(&self) -> Vec<String> {
-	//	let mut result: Vec<String> = Vec::new();
-	//	for i in self.outputs.iter() {
-	//		result.push(i.to_string());
-	//	};
-	//	result
-	//}
 }
 
 impl Session {
@@ -78,11 +56,16 @@ impl Session {
 
 		if let Ok(_) = r2pipe.cmd("aaa;aei;aeim") {} 
 		else { return Err(R2Error::CmdFail) };
+
+		let mut inputs = HashMap::new();
+		for register in fcn.input_regs.iter() {
+			inputs.insert(register.to_string(), Vec::new());
+		}
 		
 		Ok(Session {
 			r2: r2pipe,
 			fcn_config: fcn,
-			traces: Traces { inputs: Vec::new(), outputs: Vec::new() }
+			traces: Traces { inputs: inputs.clone(), outputs: Vec::new() }
 		})
 	}
 
@@ -123,9 +106,6 @@ impl Session {
 				synthesis.synthesize(&inputs, &outputs);
 				//synth_tree::Synthesis::synthesize(inputs, outputs);
 			},
-			Synthesiser::LibEvoasm => {
-				println!("not implemented");
-			}
 		}
 	}
 }

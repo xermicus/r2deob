@@ -8,7 +8,7 @@ use simdeez::{
 
 use enum_iterator::IntoEnumIterator;
 
-use super::OP_T;
+use super::BaseT;
 
 #[derive(Debug, Copy, Clone, PartialEq, IntoEnumIterator)]
 pub enum Operator {
@@ -30,7 +30,7 @@ impl ::std::fmt::Display for Operator {
 }
 
 impl Operator {
-	pub fn perform(&self, a: Vec<OP_T>, b: Vec<OP_T>) -> Option<Vec<OP_T>> {
+	pub fn perform(&self, a: Vec<BaseT>, b: Vec<BaseT>) -> Option<Vec<BaseT>> {
 		match self {
 			Operator::Add => return Some(Operator::simd_add(&a[..], &b[..])),
 			Operator::Sub => return Some(Operator::simd_sub(&a[..], &b[..])),

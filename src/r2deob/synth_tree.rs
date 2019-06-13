@@ -1,8 +1,3 @@
-extern crate rayon;
-use rayon::prelude::*;
-
-use rsmt2::SmtRes;
-
 use std::{
 	collections::HashMap,
 	thread,
@@ -16,15 +11,14 @@ use super::{
 	ast::Expression,
 	score::Score,
 	sat_interface::Sat,
-	calc::Operator,
-	OP_T,
+	BaseT,
 };
 
 #[derive(Debug,Default)]
 struct WorkerResult {
 	score: Score,
 	node: usize,
-	model: HashMap<String,OP_T>
+	model: HashMap<String,BaseT>
 }
 
 #[derive(Debug)]
@@ -47,7 +41,7 @@ struct Node {
 	index: usize,
 	prev: usize,
 	next: Vec<usize>,
-	sat_model: Vec<(String,OP_T)>
+	sat_model: Vec<(String,BaseT)>
 }
 
 #[derive(Debug)]
@@ -61,16 +55,13 @@ pub struct Synthesis {
 }
 
 impl WorkerTask {
-	pub fn work(sat: Option<&mut Sat>, inputs: &Vec<HashMap<String,OP_T>>, outputs: &Vec<OP_T>, exp: &Expression) -> WorkerResult {
+	pub fn work(_sat: Option<&mut Sat>, inputs: &HashMap<String,Vec<BaseT>>, outputs: &Vec<BaseT>, exp: &Expression) -> WorkerResult {
 		let mut result =  WorkerResult::default();
-
-		if !exp.is_finite() {
+		if let Some(results) = exp.eval(inputs) {
+			result.score = Score::get(&results, outputs);
+		} else {
 			result.score = Score::UnSat;
-			return result
 		}
-
-		let result_tests: Vec<OP_T> = Vec::new();
-		result.score = Score::get(result_tests, outputs.to_vec());
 		result
 	}
 }
@@ -94,13 +85,13 @@ impl Synthesis {
 		}
 	}
 
-	pub fn synthesize(&mut self, inputs: &Vec<HashMap<String,OP_T>>, outputs: &Vec<OP_T>) {
-		let workers = AtomicWorker::setup_workers(self.n_threads, inputs, outputs);
+	pub fn synthesize(&mut self, inputs: &HashMap<String,Vec<BaseT>>, outputs: &Vec<BaseT>) {
+		let _workers = AtomicWorker::setup_workers(self.n_threads, inputs, outputs);
 	}
 }
 
 impl AtomicWorker {	
-	fn setup_workers(n_workers: usize, inputs: &Vec<HashMap<String,OP_T>>, outputs: &Vec<OP_T>) -> Vec<AtomicWorker> {
+	fn setup_workers(n_workers: usize, inputs: &HashMap<String,Vec<BaseT>>, outputs: &Vec<BaseT>) -> Vec<AtomicWorker> {
 		let mut result: Vec<AtomicWorker> = Vec::new();
 		for _ in 0..n_workers {
 			let (task_tx, task_rx) = channel::<WorkerTask>();
@@ -131,6 +122,7 @@ impl AtomicWorker {
 
 #[test]
 fn worker_test_finite_perfect_expression() {
+	use super::calc::Operator;
 	let ast = Expression::Operation(
 		Operator::Add,
 		Box::new(Expression::Terminal("rax".to_string())),
@@ -140,19 +132,11 @@ fn worker_test_finite_perfect_expression() {
 			Box::new(Expression::Terminal("rcx".to_string()))
 		))
 	);
-	let mut inputs = Vec::new();
-	let mut input = HashMap::new();
-	input.insert("rax".to_string(), 20);
-	input.insert("rbx".to_string(), 2);
-	input.insert("rcx".to_string(), 2);
-	inputs.push(input);
-	let mut input = HashMap::new();
-	input.insert("rax".to_string(), 10);
-	input.insert("rbx".to_string(), 2);
-	input.insert("rcx".to_string(), 2);
-	inputs.push(input);
-
-	let result = WorkerTask::work(None, &inputs, &vec![20, 10], &ast);
+	let mut inputs = HashMap::new();
+	inputs.insert("rax".to_string(), vec![1,2,3,4,5,6,7,8]);
+	inputs.insert("rbx".to_string(), vec![1,2,3,4,5,6,7,8]);
+	inputs.insert("rcx".to_string(), vec![1,2,3,4,5,6,7,8]);
+	let result = WorkerTask::work(None, &inputs, &vec![1,2,3,4,5,6,7,8], &ast);
 	assert_eq!(result.score, Score::Combined(1.0))
 }
 

@@ -4,14 +4,13 @@ use enum_iterator::IntoEnumIterator;
 
 use super::{
 	calc::Operator,
-	OP_T,
+	BaseT,
 };
 
 #[derive(Debug, Clone)]
 pub enum Expression {
 	Terminal(String),
 	NonTerminal,
-	Constant,
 	Operation(Operator, Box<Expression>, Box<Expression>)
 }
 
@@ -20,7 +19,6 @@ impl ::std::fmt::Display for Expression {
 		match self {
 			Expression::Terminal(x) => write!(w, "{}", x),
 			Expression::NonTerminal => write!(w, "U"),
-			Expression::Constant => write!(w, "x"),
 			Expression::Operation(op, a, b) => write!(w, "({} {} {})", op, a, b)
 		}
 	}
@@ -31,7 +29,6 @@ impl Expression {
 		match self {
 			Expression::Terminal(x) => return x.clone(),
 			Expression::NonTerminal => return "U".to_string(),
-			Expression::Constant => return "x".to_string(),
 			Expression::Operation(op, a, b) => return format!("({} {} {})", Expression::math_notation(a), op, Expression::math_notation(b))
 		}
 	}
@@ -46,15 +43,15 @@ impl Expression {
 		}
 	}
 	
-	pub fn eval(&self, input: &HashMap<String,Vec<OP_T>>) -> Option<Vec<OP_T>> {
+	pub fn eval(&self, input: &HashMap<String,Vec<BaseT>>) -> Option<Vec<BaseT>> {
 		match &self {
 			Expression::Terminal(x) => return parse_registers(&x, input),
 			Expression::Operation(op, a, b) => {
-				let x: Vec<OP_T>;
+				let x: Vec<BaseT>;
 				if let Some(value) = Expression::eval(a, input) {
 					x = value;
 				} else { return None }
-				let y: Vec<OP_T>;
+				let y: Vec<BaseT>;
 				if let Some(value) = Expression::eval(b, input) {
 					y = value;
 				} else { return None }
@@ -109,7 +106,7 @@ impl Expression {
 	}
 }
 
-fn parse_registers(register: &String, inputs: &HashMap<String,Vec<OP_T>>) -> Option<Vec<OP_T>> {
+fn parse_registers(register: &String, inputs: &HashMap<String,Vec<BaseT>>) -> Option<Vec<BaseT>> {
 	if !inputs.contains_key(register) {
 		return None
 	}
@@ -124,10 +121,10 @@ fn test_format() {
 		Box::new(Expression::Operation(
 			Operator::Sub,
 			Box::new(Expression::NonTerminal),
-			Box::new(Expression::Constant)
+			Box::new(Expression::NonTerminal)
 		))
 	);
-    assert_eq!("(+ rax (- U x))", format!("{}", ast));
+    assert_eq!("(+ rax (- U U))", format!("{}", ast));
 }
 
 #[test]
@@ -138,16 +135,16 @@ fn test_math_notation() {
 		Box::new(Expression::Operation(
 			Operator::Sub,
 			Box::new(Expression::NonTerminal),
-			Box::new(Expression::Constant)
+			Box::new(Expression::NonTerminal)
 		))
 	);
-    assert_eq!("(rax + (U - x))", ast.math_notation());
+    assert_eq!("(rax + (U - U))", ast.math_notation());
 }
 
 #[test]
 fn test_eval_easy() {
 	let ast = Expression::Terminal("rax".to_string());
-	let mut inputs: HashMap<String,Vec<OP_T>> = HashMap::new();
+	let mut inputs: HashMap<String,Vec<BaseT>> = HashMap::new();
 	inputs.insert("rax".to_string(), vec![1,2,3]);
 	let result = ast.eval(&inputs).unwrap();
 	assert!(result == vec![1,2,3], format!("Test result was: {:?}", result));
@@ -164,7 +161,7 @@ fn test_eval_add_sub() {
 			Box::new(Expression::Terminal("rcx".to_string())),
 		))
 	);
-	let mut inputs: HashMap<String,Vec<OP_T>> = HashMap::new();
+	let mut inputs: HashMap<String,Vec<BaseT>> = HashMap::new();
 	inputs.insert("rax".to_string(), vec![1,2,3,1,1,1,1,1]);
 	inputs.insert("rbx".to_string(), vec![1,4,9,1,1,1,1,1]);
 	inputs.insert("rcx".to_string(), vec![1,2,3,1,1,1,1,1]);
@@ -183,7 +180,7 @@ fn test_eval_mul_div() {
 			Box::new(Expression::Terminal("rcx".to_string())),
 		))
 	);
-	let mut inputs: HashMap<String,Vec<OP_T>> = HashMap::new();
+	let mut inputs: HashMap<String,Vec<BaseT>> = HashMap::new();
 	inputs.insert("rax".to_string(), vec![1,2,3,1,1,1,1,1]);
 	inputs.insert("rbx".to_string(), vec![1,4,9,1,1,1,1,1]);
 	inputs.insert("rcx".to_string(), vec![1,2,3,1,1,1,1,1]);

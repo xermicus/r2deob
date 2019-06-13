@@ -43,7 +43,9 @@ pub trait SimdOperator<T> {
 	fn simd_sub(a: &[T], b: &[T]) -> Vec<T>;
 	fn sisd_sub(a: &[T], b: &[T]) -> Vec<T>;
 	fn simd_mul(a: &[T], b: &[T]) -> Vec<T>;
+	fn sisd_mul(a: &[T], b: &[T]) -> Vec<T>;
 	fn simd_div(a: &[T], b: &[T]) -> Vec<T>;
+	fn sisd_div(a: &[T], b: &[T]) -> Vec<T>;
 }
 
 impl SimdOperator<i64> for Operator {
@@ -60,19 +62,17 @@ impl SimdOperator<i64> for Operator {
 		return sisd_sub_base_t_iter(a, b);
 	}
 	fn simd_mul(a: &[i64], b: &[i64]) -> Vec<i64> {
-		return simd_mul_i64_compiletime(a, b);
+		return sisd_mul_base_t_iter(a, b);
+	}
+	fn sisd_mul(a: &[i64], b: &[i64]) -> Vec<i64> {
+		return sisd_mul_base_t_iter(a, b);
 	}
 	fn simd_div(a: &[i64], b: &[i64]) -> Vec<i64> {
-		return simd_div_i64_compiletime(a, b);
+		return sisd_div_base_t_iter(a, b);
 	}
-}
-
-pub fn sisd_add_base_t_iter(a: &[BaseT], b: &[BaseT]) -> Vec<BaseT> {
-	a.iter().zip(b).map(|(x,y)| x + y).collect()
-}
-
-pub fn sisd_sub_base_t_iter(a: &[BaseT], b: &[BaseT]) -> Vec<BaseT> {
-	a.iter().zip(b).map(|(x,y)| x - y).collect()
+	fn sisd_div(a: &[i64], b: &[i64]) -> Vec<i64> {
+		return sisd_div_base_t_iter(a, b);
+	}
 }
 
 simd_compiletime_generate!(
@@ -101,16 +101,21 @@ fn simd_sub_i64(a: &[i64], b: &[i64]) -> Vec<i64> {
 	return result
 });
 
-// No mul/div intrinsics for i64X4 yet ...
-simd_compiletime_generate!(
-fn simd_mul_i64(a: &[i64], b: &[i64]) -> Vec<i64> {
-	return a.iter().zip(b).map(|(x, y)| x * y).collect()
-});
+pub fn sisd_add_base_t_iter(a: &[BaseT], b: &[BaseT]) -> Vec<BaseT> {
+	a.iter().zip(b).map(|(x,y)| x + y).collect()
+}
 
-simd_compiletime_generate!(
-fn simd_div_i64(a: &[i64], b: &[i64]) -> Vec<i64> {
+pub fn sisd_sub_base_t_iter(a: &[BaseT], b: &[BaseT]) -> Vec<BaseT> {
+	a.iter().zip(b).map(|(x,y)| x - y).collect()
+}
+
+fn sisd_mul_base_t_iter(a: &[i64], b: &[i64]) -> Vec<i64> {
+	return a.iter().zip(b).map(|(x, y)| x * y).collect()
+}
+
+fn sisd_div_base_t_iter(a: &[i64], b: &[i64]) -> Vec<i64> {
 	return a.iter().zip(b).map(|(x, y)| x / y).collect()
-});
+}
 
 #[test]
 fn test_simd_add_i64() {
@@ -125,13 +130,13 @@ fn test_simd_sub_i64() {
 }
 
 #[test]
-fn test_simd_mul_i64() {
-	let result = simd_mul_i64_compiletime(&[1,2,3,4,5,6,7,8], &[1,2,3,4,5,6,7,8]);
+fn test_sisd_mul_i64() {
+	let result = sisd_mul_base_t_iter(&[1,2,3,4,5,6,7,8], &[1,2,3,4,5,6,7,8]);
 	assert!(result == [1,4,9,16,25,36,49,64], format!("Test result was: {:?}", result));
 }
 
 #[test]
-fn test_simd_div_i64() {
-	let result = simd_div_i64_compiletime(&[1,2,3,4,5,6,7,8], &[1,2,3,4,5,6,7,8]);
+fn test_sisd_div_i64() {
+	let result = sisd_div_base_t_iter(&[1,2,3,4,5,6,7,8], &[1,2,3,4,5,6,7,8]);
 	assert!(result == [1,1,1,1,1,1,1,1], format!("Test result was: {:?}", result));
 }

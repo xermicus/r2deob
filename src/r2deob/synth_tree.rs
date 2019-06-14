@@ -87,7 +87,53 @@ impl Synthesis {
 	}
 
 	pub fn synthesize(&mut self, inputs: &HashMap<String,Vec<BaseT>>, outputs: &Vec<BaseT>) {
-		let _workers = AtomicWorker::setup_workers(self.n_threads, inputs, outputs);
+		let workers = AtomicWorker::setup_workers(self.n_threads, inputs, outputs);
+		for _ in 0..self.n_runs {
+			// get next from queue
+			let node = self.queue[0];
+			// derive node
+			let derivates = self.tree[node].expression.derive(&self.terms);
+			// send derive to workers
+			self.send_work(&workers[0], derivates, node);
+			// receive batch of worker results if any available
+			for _ in 0..8 {
+				if let Ok(result) = &workers[0].rx.recv() {
+					match &result.score {
+						Score::Combined(x) => {
+							// update tree with worker results
+							println!("{:?} {}", x, &self.tree[result.node].expression);
+							self.tree[result.node].score = Score::Combined(*x);
+						},
+						_ => {}
+					}
+				}
+			}
+			// re-order queue
+			self.queue = vec![0];
+			for score in self.tree.iter().map(|x| &x.score).zip(self.tree.iter().map(|x| x.index)) {
+				match score.0 {
+					Score::Combined(x) => println!("{:?}, {}", score.0, score.1),
+					_ => {}
+				}
+			}
+		}
+	}
+
+	fn send_work(&mut self, worker: &AtomicWorker, derivates: Vec<Expression>, parent: usize) {
+			for expression in derivates.iter() {
+				let last_node = self.tree.len();
+				worker.tx.send(WorkerTask{expression: expression.clone(), node: last_node}).unwrap();
+				// add derivates to tree, adjust queue len
+				self.tree.push(Node {
+					expression: expression.clone(),
+					score: Score::UnSat,
+					index: last_node,
+					prev: parent,
+					next: Vec::new(),
+					sat_model: Vec::new()
+				});
+				self.tree[parent].next.push(last_node);
+			}
 	}
 }
 
@@ -105,7 +151,7 @@ impl AtomicWorker {
 					if let Ok(task) = task_rx.recv() {
 						let mut result = WorkerTask::work(Some(&mut sat), &input, &output, &task.expression);
 						result.node = task.node;
-						result_tx.send(result).unwrap();
+						result_tx.send(result);
 					} else {
 						break;
 					}

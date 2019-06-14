@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 
-use enum_iterator::IntoEnumIterator;
-
 use super::{
 	calc::Operator,
 	BaseT,
@@ -25,13 +23,13 @@ impl ::std::fmt::Display for Expression {
 }
 
 impl Expression {
-	pub fn math_notation(&self) -> String {
-		match self {
-			Expression::Terminal(x) => return x.clone(),
-			Expression::NonTerminal => return "U".to_string(),
-			Expression::Operation(op, a, b) => return format!("({} {} {})", Expression::math_notation(a), op, Expression::math_notation(b))
-		}
-	}
+	//pub fn math_notation(&self) -> String {
+	//	match self {
+	//		Expression::Terminal(x) => return x.clone(),
+	//		Expression::NonTerminal => return "U".to_string(),
+	//		Expression::Operation(op, a, b) => return format!("({} {} {})", Expression::math_notation(a), op, Expression::math_notation(b))
+	//	}
+	//}
 
 	//pub fn is_finite(&self) -> bool {
 	//	match self {
@@ -63,8 +61,6 @@ impl Expression {
 
 	pub fn combinations(registers: &Vec<String>, operators: &Vec<Operator>) -> Vec<Expression> {
 		let mut result: Vec<Expression> = Vec::new();
-		for reg in registers {
-		}
 		for op in operators {
 			result.push(Expression::Operation(*op, Box::new(Expression::NonTerminal), Box::new(Expression::NonTerminal)));
 		}

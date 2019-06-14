@@ -18,7 +18,7 @@ use r2deob::{
 };
 
 fn criterion_benchmark(c: &mut Criterion) {
-	let instructions: usize = 2048;
+	let instructions: usize = 32;
 	let mut data: Vec<BaseT> = Vec::new();
 	for i in 0..instructions {
 		data.push(i as BaseT);

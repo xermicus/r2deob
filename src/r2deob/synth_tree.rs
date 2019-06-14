@@ -9,6 +9,7 @@ use std::{
 
 use super::{
 	ast::Expression,
+	calc::Operator,
 	score::Score,
 	sat_interface::Sat,
 	BaseT,
@@ -80,7 +81,7 @@ impl Synthesis {
 				sat_model: Vec::new()
 			}],
 			queue: vec![0],
-			terms: Expression::combinations(registers),
+			terms: Expression::combinations(registers, &vec![Operator::Add, Operator::Sub]),
 			scoring: Score::Combined(0.0),
 		}
 	}

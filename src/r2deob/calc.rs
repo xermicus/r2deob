@@ -183,24 +183,24 @@ impl SimdOperator<i32> for Operator {
 
 #[test]
 fn test_simd_add_i64() {
-	let result = Operator::simd_add(&[1,2,3,4,5,6,7,8], &[8,7,6,5,4,3,2,1]);
+	let result = Operator::simd_add(&[1i64,2i64,3i64,4i64,5i64,6i64,7i64,8i64], &[8i64,7i64,6i64,5i64,4i64,3i64,2i64,1i64]);
 	assert!(result == [9,9,9,9,9,9,9,9], format!("Test result was: {:?}", result));
 }
 
 #[test]
 fn test_simd_sub_i64() {
-	let result = Operator::simd_sub(&[1,2,3,4,5,6,7,8], &[1,2,3,4,5,6,7,8]);
+	let result = Operator::simd_sub(&[1i64,2i64,3i64,4i64,5i64,6i64,7i64,8i64], &[1i64,2i64,3i64,4i64,5i64,6i64,7i64,8i64]);
 	assert!(result == [0,0,0,0,0,0,0,0], format!("Test result was: {:?}", result));
 }
 
 #[test]
 fn test_sisd_mul_i64() {
-	let result = Operator::simd_mul(&[1,2,3,4,5,6,7,8], &[1,2,3,4,5,6,7,8]);
+	let result = Operator::simd_mul(&[1i64,2i64,3i64,4i64,5i64,6i64,7i64,8i64], &[1i64,2i64,3i64,4i64,5i64,6i64,7i64,8i64]);
 	assert!(result == [1,4,9,16,25,36,49,64], format!("Test result was: {:?}", result));
 }
 
 #[test]
-fn test_smsd_div_i64() {
-	let result = Operator::sisd_div(&[1,2,3,4,5,6,7,8], &[1,2,3,4,5,6,7,8]);
+fn test_sisd_div_i64() {
+	let result = Operator::sisd_div(&[1i64,2i64,3i64,4i64,5i64,6i64,7i64,8i64], &[1i64,2i64,3i64,4i64,5i64,6i64,7i64,8i64]);
 	assert!(result == [1,1,1,1,1,1,1,1], format!("Test result was: {:?}", result));
 }

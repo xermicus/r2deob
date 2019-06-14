@@ -6,7 +6,7 @@ pub mod ast;
 pub mod score;
 pub mod calc;
 
-pub type BaseT = i32;
+pub type BaseT = i64;
 
 pub enum R2Error {
 	PipeFail,

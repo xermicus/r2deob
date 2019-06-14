@@ -61,18 +61,18 @@ impl Expression {
 		}
 	}
 
-	pub fn combinations(registers: &Vec<String>) -> Vec<Expression> {
+	pub fn combinations(registers: &Vec<String>, operators: &Vec<Operator>) -> Vec<Expression> {
 		let mut result: Vec<Expression> = Vec::new();
 		for reg in registers {
-			result.push(Expression::Terminal(reg.clone()));
 		}
-		for op in Operator::into_enum_iter().filter(|x| !x.to_string().contains('=')) {
-			result.push(Expression::Operation(op, Box::new(Expression::NonTerminal), Box::new(Expression::NonTerminal)));
+		for op in operators {
+			result.push(Expression::Operation(*op, Box::new(Expression::NonTerminal), Box::new(Expression::NonTerminal)));
 		}
 		for reg in registers {
-			for op in Operator::into_enum_iter().filter(|x| !x.to_string().contains('=')) {
-				result.push(Expression::Operation(op, Box::new(Expression::Terminal(reg.clone())), Box::new(Expression::NonTerminal)));
-				result.push(Expression::Operation(op, Box::new(Expression::NonTerminal), Box::new(Expression::Terminal(reg.clone()))));
+			result.push(Expression::Terminal(reg.clone()));
+			for op in operators {
+				result.push(Expression::Operation(*op, Box::new(Expression::Terminal(reg.clone())), Box::new(Expression::NonTerminal)));
+				result.push(Expression::Operation(*op, Box::new(Expression::NonTerminal), Box::new(Expression::Terminal(reg.clone()))));
 			}
 		}
 		result
@@ -83,18 +83,10 @@ impl Expression {
 		match expression {
 			Expression::Operation(op, a, b) => {
 				for e in Expression::derive(a, derivates).iter() {
-					result.push(Expression::Operation(
-						*op,
-						Box::new(e.clone()),
-						Box::new(*b.clone())
-					));
+					result.push(Expression::Operation(*op, Box::new(e.clone()), Box::new(*b.clone())));
 				}
 				for e in Expression::derive(b, derivates).iter() {
-					result.push(Expression::Operation(
-						*op,
-						Box::new(*a.clone()),
-						Box::new(e.clone())
-					));
+					result.push(Expression::Operation(*op, Box::new(*a.clone()), Box::new(e.clone())));
 				}
 			},
 			Expression::NonTerminal => {
@@ -112,6 +104,12 @@ fn parse_registers(register: &String, inputs: &HashMap<String,Vec<BaseT>>) -> Op
 		return None
 	}
 	Some(inputs[register].clone())
+}
+
+#[test]
+fn test_derive() {
+	let combinations = Expression::combinations(&vec!["rax".to_string(), "rbx".to_string()], &vec![Operator::Add, Operator::Sub]);
+	let _ = Expression::derive(&mut Expression::NonTerminal, &combinations);
 }
 
 #[test]

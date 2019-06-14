@@ -55,7 +55,7 @@ impl Expression {
 				if let Some(value) = Expression::eval(b, input) {
 					y = value;
 				} else { return None }
-				return op.perform(x, y)
+				return op.perform(&x[..], &y[..])
 			},
 			_ => return None
 		}

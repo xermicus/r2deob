@@ -23,13 +23,13 @@ impl ::std::fmt::Display for Expression {
 }
 
 impl Expression {
-	//pub fn math_notation(&self) -> String {
-	//	match self {
-	//		Expression::Terminal(x) => return x.clone(),
-	//		Expression::NonTerminal => return "U".to_string(),
-	//		Expression::Operation(op, a, b) => return format!("({} {} {})", Expression::math_notation(a), op, Expression::math_notation(b))
-	//	}
-	//}
+	pub fn math_notation(&self) -> String {
+		match self {
+			Expression::Terminal(x) => return x.clone(),
+			Expression::NonTerminal => return "U".to_string(),
+			Expression::Operation(op, a, b) => return format!("({} {} {})", Expression::math_notation(a), op, Expression::math_notation(b))
+		}
+	}
 
 	//pub fn is_finite(&self) -> bool {
 	//	match self {

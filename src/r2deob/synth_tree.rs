@@ -1,5 +1,7 @@
 use std::{
+	cmp::Ordering,
 	collections::HashMap,
+	collections::BinaryHeap,
 	thread,
 	thread::JoinHandle,
 	sync::mpsc::channel,
@@ -14,6 +16,23 @@ use super::{
 	sat_interface::Sat,
 	BaseT,
 };
+
+#[derive(Debug,PartialEq)]
+struct QueueScore(f32,usize);
+
+impl Eq for QueueScore {}
+
+impl PartialOrd for QueueScore {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		other.0.partial_cmp(&self.0)
+	}
+}
+
+impl Ord for QueueScore {
+    fn cmp(&self, other: &QueueScore) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
 
 #[derive(Debug,Default)]
 struct WorkerResult {
@@ -38,7 +57,7 @@ struct AtomicWorker {
 #[derive(Debug)]
 struct Node {
 	expression: Expression,
-	score: Score,
+	score: f32,
 	index: usize,
 	prev: usize,
 	next: Vec<usize>,
@@ -50,7 +69,7 @@ pub struct Synthesis {
 	n_runs: usize,
 	n_threads: usize,
 	tree: Vec<Node>,
-	queue: Vec<usize>,
+	queue: BinaryHeap<QueueScore>,
 	terms: Vec<Expression>,
 	scoring: Score,
 }
@@ -70,17 +89,17 @@ impl WorkerTask {
 impl Synthesis {
 	pub fn default(registers: &Vec<String>) -> Synthesis {
 		Synthesis {
-			n_runs: 3,
-			n_threads: 1,
+			n_runs: 16,
+			n_threads: 8,
 			tree: vec![Node {
 				expression: Expression::NonTerminal,
-				score: Score::UnSat,
+				score: 0.0,//Score::UnSat,
 				index: 0,
 				prev: 0,
 				next: Vec::new(),
 				sat_model: Vec::new()
 			}],
-			queue: vec![0],
+			queue: BinaryHeap::from(vec![QueueScore(0.0,0usize)]),
 			terms: Expression::combinations(registers, &vec![Operator::Add, Operator::Sub]),
 			scoring: Score::Combined(0.0),
 		}
@@ -89,50 +108,72 @@ impl Synthesis {
 	pub fn synthesize(&mut self, inputs: &HashMap<String,Vec<BaseT>>, outputs: &Vec<BaseT>) {
 		let workers = AtomicWorker::setup_workers(self.n_threads, inputs, outputs);
 		for _ in 0..self.n_runs {
-			// get next from queue
-			let node = self.queue[0];
-			// derive node
-			let derivates = self.tree[node].expression.derive(&self.terms);
-			// send derive to workers
-			self.send_work(&workers[0], derivates, node);
+			for w in 0..self.n_threads {
+				// get next from queue
+				if let Some(node) = self.queue.pop() {
+					// derive node
+					let derivates = self.tree[node.1].expression.derive(&self.terms);
+					// send derive to workers
+					self.create_nodes(&workers[w], derivates, node.1);
+				}
+			}
 			// receive batch of worker results if any available
-			for _ in 0..8 {
-				if let Ok(result) = &workers[0].rx.recv() {
-					match &result.score {
-						Score::Combined(x) => {
-							// update tree with worker results
-							println!("{:?} {}", x, &self.tree[result.node].expression);
-							self.tree[result.node].score = Score::Combined(*x);
-						},
-						_ => {}
+			self.update(&workers);
+			// re-order queue
+			self.rebuild_queue();
+		}
+	}
+
+	fn recv_n_results(n: usize, workers: &Vec<AtomicWorker>) -> Vec<(f32,usize)> {
+		let mut results = Vec::new();
+		for _ in 0..n {
+			for w in 0..workers.len() {
+				if let Ok(result) = &workers[w].rx.try_recv() {
+					match result.score {
+						Score::Combined(x) => results.push((x, result.node)),
+						_ => results.push((0f32, result.node)),
 					}
 				}
 			}
-			// re-order queue
-			self.queue = vec![0];
-			for score in self.tree.iter().map(|x| &x.score).zip(self.tree.iter().map(|x| x.index)) {
-				match score.0 {
-					Score::Combined(x) => println!("{:?}, {}", score.0, score.1),
-					_ => {}
-				}
+		}
+		return results
+	}
+
+	fn update(&mut self, workers: &Vec<AtomicWorker>) {
+		for result in Synthesis::recv_n_results(128, workers) {
+			self.tree[result.1].score = result.0;
+			if result.0 == 1.0 {
+				println!("Candidate found: {}", self.tree[result.1].expression.math_notation());
 			}
 		}
 	}
 
-	fn send_work(&mut self, worker: &AtomicWorker, derivates: Vec<Expression>, parent: usize) {
+	fn rebuild_queue(&mut self) {
+		self.queue.clear();
+		for node in self.tree.iter().map(|x| (&x.score, &x.index)) {
+			if self.tree[*node.1].next.len() < 1 {
+				self.queue.push(QueueScore(*node.0, *node.1));
+			}
+		}
+	}
+
+	fn add_node(&mut self, node: usize, expression: &Expression, parent: usize) {
+		self.tree.push(Node {
+			expression: expression.clone(),
+			score: 0.0,
+			index: node,
+			prev: parent,
+			next: Vec::new(),
+			sat_model: Vec::new()
+		});
+		self.tree[parent].next.push(node);
+	}
+
+	fn create_nodes(&mut self, worker: &AtomicWorker, derivates: Vec<Expression>, parent: usize) {
 			for expression in derivates.iter() {
 				let last_node = self.tree.len();
 				worker.tx.send(WorkerTask{expression: expression.clone(), node: last_node}).unwrap();
-				// add derivates to tree, adjust queue len
-				self.tree.push(Node {
-					expression: expression.clone(),
-					score: Score::UnSat,
-					index: last_node,
-					prev: parent,
-					next: Vec::new(),
-					sat_model: Vec::new()
-				});
-				self.tree[parent].next.push(last_node);
+				self.add_node(last_node, expression, parent);
 			}
 	}
 }

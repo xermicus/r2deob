@@ -20,20 +20,6 @@ use super::{
 #[derive(Debug,PartialEq)]
 struct QueueScore(f32,usize);
 
-impl Eq for QueueScore {}
-
-impl PartialOrd for QueueScore {
-	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-		other.0.partial_cmp(&self.0)
-	}
-}
-
-impl Ord for QueueScore {
-    fn cmp(&self, other: &QueueScore) -> Ordering {
-        self.partial_cmp(other).unwrap()
-    }
-}
-
 #[derive(Debug,Default)]
 struct WorkerResult {
 	score: Score,
@@ -68,6 +54,7 @@ struct Node {
 pub struct Synthesis {
 	n_runs: usize,
 	n_threads: usize,
+	n_batchsize: usize,
 	tree: Vec<Node>,
 	queue: BinaryHeap<QueueScore>,
 	terms: Vec<Expression>,
@@ -89,8 +76,9 @@ impl WorkerTask {
 impl Synthesis {
 	pub fn default(registers: &Vec<String>) -> Synthesis {
 		Synthesis {
-			n_runs: 16,
+			n_runs: 8192,
 			n_threads: 8,
+			n_batchsize: 32,
 			tree: vec![Node {
 				expression: Expression::NonTerminal,
 				score: 0.0,//Score::UnSat,
@@ -100,7 +88,7 @@ impl Synthesis {
 				sat_model: Vec::new()
 			}],
 			queue: BinaryHeap::from(vec![QueueScore(0.0,0usize)]),
-			terms: Expression::combinations(registers, &vec![Operator::Add, Operator::Sub]),
+			terms: Expression::combinations(registers, &vec![Operator::Add, Operator::Sub, Operator::Mul, Operator::Div]),
 			scoring: Score::Combined(0.0),
 		}
 	}
@@ -109,17 +97,12 @@ impl Synthesis {
 		let workers = AtomicWorker::setup_workers(self.n_threads, inputs, outputs);
 		for _ in 0..self.n_runs {
 			for w in 0..self.n_threads {
-				// get next from queue
 				if let Some(node) = self.queue.pop() {
-					// derive node
 					let derivates = self.tree[node.1].expression.derive(&self.terms);
-					// send derive to workers
 					self.create_nodes(&workers[w], derivates, node.1);
 				}
 			}
-			// receive batch of worker results if any available
 			self.update(&workers);
-			// re-order queue
 			self.rebuild_queue();
 		}
 	}
@@ -140,10 +123,11 @@ impl Synthesis {
 	}
 
 	fn update(&mut self, workers: &Vec<AtomicWorker>) {
-		for result in Synthesis::recv_n_results(128, workers) {
+		for result in Synthesis::recv_n_results(self.n_batchsize, workers) {
 			self.tree[result.1].score = result.0;
 			if result.0 == 1.0 {
 				println!("Candidate found: {}", self.tree[result.1].expression.math_notation());
+				::std::process::exit(0);
 			}
 		}
 	}
@@ -192,7 +176,9 @@ impl AtomicWorker {
 					if let Ok(task) = task_rx.recv() {
 						let mut result = WorkerTask::work(Some(&mut sat), &input, &output, &task.expression);
 						result.node = task.node;
-						result_tx.send(result);
+						if let Err(x) = result_tx.send(result) {
+							panic!("worker send failure: {:?}", x);
+						}
 					} else {
 						break;
 					}
@@ -206,6 +192,20 @@ impl AtomicWorker {
 		}
 		return result
 	}
+}
+
+impl Eq for QueueScore {}
+
+impl PartialOrd for QueueScore {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		other.0.partial_cmp(&self.0)
+	}
+}
+
+impl Ord for QueueScore {
+    fn cmp(&self, other: &QueueScore) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
 }
 
 #[test]

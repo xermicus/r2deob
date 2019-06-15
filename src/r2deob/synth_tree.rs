@@ -77,7 +77,7 @@ impl Synthesis {
 	pub fn default(registers: &Vec<String>) -> Synthesis {
 		Synthesis {
 			n_runs: 8192,
-			n_threads: 8,
+			n_threads: 1,
 			n_batchsize: 32,
 			tree: vec![Node {
 				expression: Expression::NonTerminal,
@@ -99,10 +99,10 @@ impl Synthesis {
 			for w in 0..self.n_threads {
 				if let Some(node) = self.queue.pop() {
 					let derivates = self.tree[node.1].expression.derive(&self.terms);
-					self.create_nodes(&workers[w], derivates, node.1);
+					self.create_nodes(inputs, outputs, &workers[w], derivates, node.1);
 				}
 			}
-			self.update(&workers);
+			//self.update(&workers);
 			self.rebuild_queue();
 		}
 	}
@@ -151,11 +151,17 @@ impl Synthesis {
 		self.tree[parent].next.push(node);
 	}
 
-	fn create_nodes(&mut self, worker: &AtomicWorker, derivates: Vec<Expression>, parent: usize) {
+	fn create_nodes(&mut self, inputs: &HashMap<String,Vec<BaseT>>, outputs: &Vec<BaseT>, worker: &AtomicWorker, derivates: Vec<Expression>, parent: usize) {
 			for expression in derivates.iter() {
+				// eval here
 				let last_node = self.tree.len();
-				worker.tx.send(WorkerTask{expression: expression.clone(), node: last_node}).unwrap();
 				self.add_node(last_node, expression, parent);
+				if let Some(results) = expression.eval(inputs) {
+					if let Score::Combined(x) = Score::get(&results, outputs) {
+						if x == 1.0  { println!("Candidate found: {}", expression.math_notation()); }
+						self.tree[last_node].score = x;
+					}
+				}
 			}
 	}
 }

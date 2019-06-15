@@ -134,10 +134,8 @@ impl Synthesis {
 
 	fn rebuild_queue(&mut self) {
 		self.queue.clear();
-		for node in self.tree.iter().map(|x| (&x.score, &x.index)) {
-			if self.tree[*node.1].next.len() < 1 {
-				self.queue.push(QueueScore(*node.0, *node.1));
-			}
+		for node in self.tree.iter().filter(|x| x.next.len() < 1).map(|x| (&x.score, &x.index)) {
+			self.queue.push(QueueScore(*node.0, *node.1));
 		}
 	}
 
@@ -227,22 +225,3 @@ fn worker_test_finite_perfect_expression() {
 	let result = WorkerTask::work(None, &inputs, &vec![1,2,3,4,5,6,7,8], &ast);
 	assert_eq!(result.score, Score::Combined(1.0))
 }
-
-/*
-	pub fn derive_node(&mut self, node: usize) {
-		let expression = &self.tree.get(node).unwrap().expression;
-		let expressions: Vec<Expression> = Expression::derive(&mut expression.clone(), &self.terms);
-		for e in expressions.iter() {
-			let index = self.tree.len();
-			self.tree.push(Node {
-				expression: e.clone(),
-				score: Score::UnSat,
-				index: index,
-				prev: node,
-				next: Vec::new(),
-				sat_model: Vec::new()
-			});
-			self.tree[node].next.push(index);
-		}
-	}
-*/

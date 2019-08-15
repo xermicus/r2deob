@@ -27,7 +27,12 @@ impl Expression {
 		match self {
 			Expression::Terminal(x) => return x.clone(),
 			Expression::NonTerminal => return "U".to_string(),
-			Expression::Operation(op, a, b) => return format!("({} {} {})", Expression::math_notation(a), op, Expression::math_notation(b))
+			Expression::Operation(op, a, b) =>
+				return format!("({} {} {})",
+					Expression::math_notation(a),
+					op,
+					Expression::math_notation(b)
+				)
 		}
 	}
 
@@ -61,28 +66,54 @@ impl Expression {
 
 	pub fn combinations(registers: &Vec<String>, operators: &Vec<Operator>) -> Vec<Expression> {
 		let mut result: Vec<Expression> = Vec::new();
-		for op in operators {
-			result.push(Expression::Operation(*op, Box::new(Expression::NonTerminal), Box::new(Expression::NonTerminal)));
-		}
+
 		for reg in registers {
 			result.push(Expression::Terminal(reg.clone()));
+
 			for op in operators {
-				result.push(Expression::Operation(*op, Box::new(Expression::Terminal(reg.clone())), Box::new(Expression::NonTerminal)));
-				result.push(Expression::Operation(*op, Box::new(Expression::NonTerminal), Box::new(Expression::Terminal(reg.clone()))));
+				result.push(
+					Expression::Operation(
+						*op,
+						Box::new(Expression::Terminal(reg.clone())),
+						Box::new(Expression::NonTerminal)
+					)
+				);
+
+				result.push(
+					Expression::Operation(
+						*op,
+						Box::new(Expression::NonTerminal),
+						Box::new(Expression::Terminal(reg.clone()))
+					)
+				);
 			}
 		}
+
 		result
 	}
 
 	pub fn derive(&self, derivates: &Vec<Expression>) -> Vec<Expression> {
 		let mut result: Vec<Expression> = Vec::new();
+
 		match &self {
 			Expression::Operation(op, a, b) => {
 				for e in Expression::derive(a, derivates).iter() {
-					result.push(Expression::Operation(*op, Box::new(e.clone()), Box::new(*b.clone())));
+					result.push(
+						Expression::Operation(
+							*op,
+							Box::new(e.clone()),
+							Box::new(*b.clone())
+						)
+					);
 				}
 				for e in Expression::derive(b, derivates).iter() {
-					result.push(Expression::Operation(*op, Box::new(*a.clone()), Box::new(e.clone())));
+					result.push(
+						Expression::Operation(
+							*op, Box::new(
+							*a.clone()),
+							Box::new(e.clone())
+						)
+					);
 				}
 			},
 			Expression::NonTerminal => {
@@ -90,6 +121,7 @@ impl Expression {
 			},
 			_ => {}
 		}
+
 		result
 	}
 }

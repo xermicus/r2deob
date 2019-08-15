@@ -76,8 +76,8 @@ impl WorkerTask {
 impl Synthesis {
 	pub fn default(registers: &Vec<String>) -> Synthesis {
 		Synthesis {
-			n_runs: 8192,
-			n_threads: 1,
+			n_runs: 88192,
+			n_threads: 8,
 			n_batchsize: 32,
 			tree: vec![Node {
 				expression: Expression::NonTerminal,
@@ -102,7 +102,7 @@ impl Synthesis {
 					self.create_nodes(inputs, outputs, &workers[w], derivates, node.1);
 				}
 			}
-			//self.update(&workers);
+			self.update(&workers);
 			self.rebuild_queue();
 		}
 	}
@@ -119,13 +119,13 @@ impl Synthesis {
 				}
 			}
 		}
-		return results
+		results
 	}
 
 	fn update(&mut self, workers: &Vec<AtomicWorker>) {
 		for result in Synthesis::recv_n_results(self.n_batchsize, workers) {
 			self.tree[result.1].score = result.0;
-			if result.0 == 1.0 {
+			if result.0 - 1.0 == 0.0 {
 				println!("Candidate found: {}", self.tree[result.1].expression.math_notation());
 				::std::process::exit(0);
 			}
@@ -134,8 +134,10 @@ impl Synthesis {
 
 	fn rebuild_queue(&mut self) {
 		self.queue.clear();
-		for node in self.tree.iter().filter(|x| x.next.len() < 1).map(|x| (&x.score, &x.index)) {
-			self.queue.push(QueueScore(*node.0, *node.1));
+		for node in self.tree.iter()
+			.filter(|x| x.next.len() < 1)
+			.filter(|x| x.score < 1f32) {
+			self.queue.push(QueueScore(node.score, node.index));
 		}
 	}
 
@@ -151,15 +153,36 @@ impl Synthesis {
 		self.tree[parent].next.push(node);
 	}
 
+	fn update_parents(&mut self, start: usize) {
+		let mut current = start;
+		let mut current_score = self.tree[start].score.clone();
+		while let Some(node) = self.tree.get_mut(current) {
+			let len = node.next.len() as f32;
+			//node.score = (node.score * (len - 1f32) + current_score.clone()) / len;
+			node.score = (node.score + current_score.clone()) / 2f32;
+			if node.index == 0 { break; }
+			current = node.prev;
+			current_score = node.score;
+		}
+	}
+
 	fn create_nodes(&mut self, inputs: &HashMap<String,Vec<BaseT>>, outputs: &Vec<BaseT>, worker: &AtomicWorker, derivates: Vec<Expression>, parent: usize) {
 			for expression in derivates.iter() {
-				// eval here
 				let last_node = self.tree.len();
 				self.add_node(last_node, expression, parent);
 				if let Some(results) = expression.eval(inputs) {
 					if let Score::Combined(x) = Score::get(&results, outputs) {
-						if x == 1.0  { println!("Candidate found: {}", expression.math_notation()); }
 						self.tree[last_node].score = x;
+						self.update_parents(last_node);
+
+						if x - 1.0 == 0.0  {
+							println!("Candidate found: {} Node #{}",
+								expression.math_notation(),
+								self.tree[last_node].index
+							);
+							::std::process::exit(0);
+						}
+
 					}
 				}
 			}
@@ -194,7 +217,7 @@ impl AtomicWorker {
 				handle: handle,
 			});
 		}
-		return result
+		result
 	}
 }
 

@@ -13,7 +13,11 @@ pub enum Expression {
 }
 
 impl ::std::fmt::Display for Expression {
-    fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+    fn fmt(
+		&self,
+		w: &mut ::std::fmt::Formatter)
+		-> ::std::fmt::Result {
+
 		match self {
 			Expression::Terminal(x) => write!(w, "{}", x),
 			Expression::NonTerminal => write!(w, "U"),
@@ -23,7 +27,10 @@ impl ::std::fmt::Display for Expression {
 }
 
 impl Expression {
-	pub fn math_notation(&self) -> String {
+	pub fn math_notation(
+		&self)
+		-> String {
+
 		match self {
 			Expression::Terminal(x) => return x.clone(),
 			Expression::NonTerminal => return "U".to_string(),
@@ -35,18 +42,12 @@ impl Expression {
 				)
 		}
 	}
-
-	//pub fn is_finite(&self) -> bool {
-	//	match self {
-	//		Expression::NonTerminal => return false,
-	//		Expression::Operation(_, a, b) => {
-	//			return Expression::is_finite(&mut *a.clone()) & Expression::is_finite(&mut *b.clone())
-	//		},
-	//		_ => return true
-	//	}
-	//}
 	
-	pub fn eval(&self, input: &HashMap<String,Vec<BaseT>>) -> Option<Vec<BaseT>> {
+	pub fn eval(
+		&self,
+		input: &HashMap<String,Vec<BaseT>>)
+		-> Option<Vec<BaseT>> {
+
 		match &self {
 			Expression::Terminal(x) => return parse_registers(&x, input),
 			Expression::Operation(op, a, b) => {
@@ -64,7 +65,11 @@ impl Expression {
 		}
 	}
 
-	pub fn combinations(registers: &Vec<String>, operators: &Vec<Operator>) -> Vec<Expression> {
+	pub fn combinations(
+		registers: &Vec<String>,
+		operators: &Vec<Operator>)
+		-> Vec<Expression> {
+
 		let mut result: Vec<Expression> = Vec::new();
 
 		for reg in registers {
@@ -92,7 +97,11 @@ impl Expression {
 		result
 	}
 
-	pub fn derive(&self, derivates: &Vec<Expression>) -> Vec<Expression> {
+	pub fn derive(
+		&self,
+		derivates: &Vec<Expression>)
+		-> Vec<Expression> {
+
 		let mut result: Vec<Expression> = Vec::new();
 
 		match &self {
@@ -126,8 +135,11 @@ impl Expression {
 	}
 }
 
-fn parse_registers(register: &String, inputs: &HashMap<String,Vec<BaseT>>) -> Option<Vec<BaseT>> {
-	// could maybe left out for performance
+fn parse_registers(
+	register: &String,
+	inputs: &HashMap<String,Vec<BaseT>>)
+	-> Option<Vec<BaseT>> {
+
 	if !inputs.contains_key(register) {
 		return None
 	}

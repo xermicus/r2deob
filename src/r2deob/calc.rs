@@ -15,7 +15,11 @@ pub enum Operator {
 }
 
 impl ::std::fmt::Display for Operator {
-	fn fmt(&self, w: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+	fn fmt(
+		&self,
+		w: &mut ::std::fmt::Formatter)
+		-> ::std::fmt::Result {
+
 		w.write_str(match *self {
 			Operator::Add => "+",
 			Operator::Sub => "-",
@@ -26,7 +30,12 @@ impl ::std::fmt::Display for Operator {
 }
 
 impl Operator {
-	pub fn perform(&self, a: &[BaseT], b: &[BaseT]) -> Option<Vec<BaseT>> {
+	pub fn perform(
+		&self,
+		a: &[BaseT],
+		b: &[BaseT])
+		-> Option<Vec<BaseT>> {
+
 		match self {
 			Operator::Add => return Some(Operator::simd_add(&a[..], &b[..])),
 			Operator::Sub => return Some(Operator::simd_sub(&a[..], &b[..])),
@@ -43,8 +52,8 @@ pub trait SimdOperator<T> {
 	fn sisd_sub(a: &[T], b: &[T]) -> Vec<T>;
 	fn simd_mul(a: &[T], b: &[T]) -> Vec<T>;
 	fn sisd_mul(a: &[T], b: &[T]) -> Vec<T>;
-	fn simd_div(a: &[T], b: &[T]) -> Vec<T>;
 	fn sisd_div(a: &[T], b: &[T]) -> Vec<T>;
+	fn simd_div(a: &[T], b: &[T]) -> Vec<T>;
 }
 
 impl SimdOperator<i64> for Operator {
@@ -100,22 +109,29 @@ impl SimdOperator<i64> for Operator {
 	}
 
 	fn simd_div(a: &[i64], b: &[i64]) -> Vec<i64> {
-		// TODO how to checked_div ?
-		//let mut result: Vec<i64> = Vec::with_capacity(a.len());
-		//unsafe { result.set_len(a.len()); }
-		//let mut result_chunk = result.chunks_exact_mut(8);
-		//for elem in a.chunks_exact(8)
-		//	.map(i64x8::from_slice_unaligned)
-		//	.zip(b.chunks_exact(8).map(i64x8::from_slice_unaligned))
-		//	.map(|(a, b)| a / b) {
-		//	elem.write_to_slice_unaligned(&mut result_chunk.next().unwrap());
-		//}
-		//result
-		return a.iter().zip(b).map(|(x, y)| if let Some(v) = x.checked_div(*y) { v } else { 0 }).collect()
+		return a
+			.iter()
+			.zip(b)
+			.map(|(x, y)|
+				if let Some(v) = x.checked_div(*y) {
+					v
+				} else {
+					0
+				}
+			)
+			.collect()
 	}
 
 	fn sisd_div(a: &[i64], b: &[i64]) -> Vec<i64> {
-		return a.iter().zip(b).map(|(x, y)| x.checked_div(*y).unwrap()).collect()
+		return a
+			.iter()
+			.zip(b)
+			.map(|(x, y)|
+				x
+				.checked_div(*y)
+				.unwrap()
+			)
+			.collect()
 	}
 }
 

@@ -157,32 +157,22 @@ pub struct Expression {
 	pub leaves: Vec<String>,
 }
 
-impl Expression {
-	fn fmt_at(&self, f: &mut fmt::Formatter, at: usize) -> Result<usize, fmt::Error> {
-		match self.tokens[at] {
-			Token::Leaf(leaf) => {
-				f.write_str(&self.leaves[usize::from(leaf)])?;
-				Ok(at + 1)
-			}
-			Token::Unary(op) => {
-				f.write_str(op.symbol())?;
-				self.fmt_at(f, at + 1)
-			}
-			Token::Binary(op) => {
-				f.write_str("(")?;
-				let next = self.fmt_at(f, at + 1)?;
-				write!(f, " {} ", op.symbol())?;
-				let next = self.fmt_at(f, next)?;
-				f.write_str(")")?;
-				Ok(next)
-			}
-		}
-	}
-}
-
 impl fmt::Display for Expression {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		self.fmt_at(f, 0).map(|_| ())
+		let mut operands: Vec<String> = Vec::new();
+		for &token in self.tokens.iter().rev() {
+			let operand = match token {
+				Token::Leaf(leaf) => self.leaves[usize::from(leaf)].clone(),
+				Token::Unary(op) => format!("{}{}", op.symbol(), operands.pop().ok_or(fmt::Error)?),
+				Token::Binary(op) => {
+					let lhs = operands.pop().ok_or(fmt::Error)?;
+					let rhs = operands.pop().ok_or(fmt::Error)?;
+					format!("({lhs} {} {rhs})", op.symbol())
+				}
+			};
+			operands.push(operand);
+		}
+		f.write_str(&operands.pop().ok_or(fmt::Error)?)
 	}
 }
 

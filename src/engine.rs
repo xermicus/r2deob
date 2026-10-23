@@ -80,6 +80,7 @@ pub struct Status {
 	pub playouts: u64,
 	pub nodes: usize,
 	pub best_score: f64,
+	pub exploration: f64,
 	pub best: Option<Expression>,
 }
 
@@ -239,6 +240,7 @@ impl Session {
 				playouts: p.playouts,
 				nodes: p.nodes,
 				best_score: p.best_score,
+				exploration: p.exploration,
 				best: (!p.best.is_empty()).then(|| Expression {
 					tokens: p.best.to_vec(),
 					leaves: leaves.clone(),

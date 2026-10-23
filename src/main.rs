@@ -61,6 +61,9 @@ struct Args {
 	max_len: usize,
 	#[arg(long, default_value_t = SearchConfig::default().exploration)]
 	exploration: f64,
+	/// Seconds without a new best after which exploration doubles
+	#[arg(long, default_value_t = SearchConfig::default().stall.as_secs_f64())]
+	stall: f64,
 	/// Weight of a node's best playout score against its mean, from 0 to 1
 	#[arg(long, default_value_t = SearchConfig::default().max_weight)]
 	max_weight: f32,
@@ -89,11 +92,12 @@ struct Args {
 
 fn print_status(status: &Status) {
 	eprint!(
-		"{:>9.0?} {:>14} playouts {:>6.1} M/s {:>10} nodes  best {:.4}",
+		"{:>9.0?} {:>14} playouts {:>6.1} M/s {:>10} nodes  explore {:>5.1}  best {:.4}",
 		status.elapsed,
 		status.playouts,
 		status.playouts as f64 / status.elapsed.as_secs_f64() / 1e6,
 		status.nodes,
+		status.exploration,
 		status.best_score
 	);
 	match &status.best {
@@ -119,6 +123,9 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
 	let args = Args::parse();
+	if args.max_len == 0 {
+		return Err("--max-len must be at least 1".into());
+	}
 	let grammar = Grammar::new(&args.ops, args.consts)?;
 	let defaults = SearchConfig::default();
 	let threads = args.threads.unwrap_or(defaults.threads);
@@ -141,6 +148,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 			trees: args.trees.unwrap_or(threads),
 			max_len: args.max_len,
 			exploration: args.exploration,
+			stall: Duration::from_secs_f64(args.stall),
 			max_weight: args.max_weight,
 			expand_after: args.expand_after,
 			playouts: args.playouts,

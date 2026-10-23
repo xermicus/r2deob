@@ -243,11 +243,10 @@ fn sign_bits<W: Word>(value: &Lanes<W>, output: &Lanes<W>) -> u32 {
 
 pub struct Evaluator<W> {
 	stack: Vec<Lanes<W>>,
+	origins: Vec<u8>,
 }
 
 const COMPUTED: u8 = u8::MAX;
-
-pub const MAX_DEPTH: usize = 32;
 
 #[inline(always)]
 fn divide<W: Word>(
@@ -283,13 +282,9 @@ fn binary<W: Word>(lhs: &Lanes<W>, rhs: &mut Lanes<W>, f: impl Fn(W, W) -> W) {
 impl<W: Word> Evaluator<W> {
 	pub fn new(max_len: usize) -> Evaluator<W> {
 		let depth = max_len.div_ceil(2).max(1);
-		assert!(
-			depth <= MAX_DEPTH,
-			"expressions longer than {} tokens",
-			2 * MAX_DEPTH - 1
-		);
 		Evaluator {
 			stack: vec![[W::default(); SAMPLES]; depth],
+			origins: vec![COMPUTED; depth],
 		}
 	}
 
@@ -299,7 +294,7 @@ impl<W: Word> Evaluator<W> {
 		tokens: &[Token],
 		samples: &Samples<W>,
 	) -> &Lanes<W> {
-		let mut origins = [COMPUTED; MAX_DEPTH];
+		let origins = &mut self.origins;
 		let mut top = 0;
 		for &token in tokens.iter().rev() {
 			match token {

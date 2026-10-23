@@ -23,6 +23,9 @@ pub struct SearchConfig {
 	pub trees: usize,
 	pub max_len: usize,
 	pub exploration: f64,
+	/// Time without a new best after which exploration doubles, cycling back to the base value
+	/// after [`MAX_EXPLORATION_SCALE`]; every new best halves it.
+	pub stall: Duration,
 	/// Weight of a node's best playout score against its mean in UCT, from 0 to 1.
 	pub max_weight: f32,
 	pub expand_after: u32,
@@ -45,6 +48,7 @@ impl Default for SearchConfig {
 			trees: thread::available_parallelism().map_or(1, usize::from),
 			max_len: 15,
 			exploration: 1.0,
+			stall: Duration::from_secs(1),
 			max_weight: 1.0,
 			expand_after: 512,
 			playouts: 16,
@@ -73,6 +77,7 @@ pub struct Progress<'a> {
 	pub nodes: usize,
 	/// Best playout score so far, from 0 to 1.
 	pub best_score: f64,
+	pub exploration: f64,
 	pub best: &'a [Token],
 }
 
@@ -85,6 +90,8 @@ struct Shape<'a> {
 	max_len: usize,
 	playout: [Vec<Token>; 3],
 }
+
+const MAX_EXPLORATION_SCALE: f64 = 32.0;
 
 /// Leaf, unary and binary weights; keeps random expansions subcritical.
 const PLAYOUT_WEIGHTS: [usize; 3] = [3, 1, 2];
@@ -220,80 +227,96 @@ impl Node {
 		unsafe { std::slice::from_raw_parts(children, n) }
 	}
 
-	/// Preorder: visits, score sum, best score, flags (exhausted, has children), then the children.
-	fn save(
-		&self,
-		out: &mut impl Write,
-		shape: &Shape,
-		len: usize,
-		holes: usize,
-	) -> io::Result<()> {
-		let children = self.children(shape.choices(len, holes));
-		write_u32(out, self.visits.load(Ordering::Relaxed))?;
-		write_u64(out, self.score.load(Ordering::Relaxed))?;
-		write_u32(out, self.best_score())?;
-		out.write_all(&[u8::from(self.is_exhausted()) | u8::from(children.is_some()) << 1])?;
-		for (child, token) in children.into_iter().flatten().zip(shape.productions) {
-			child.save(out, shape, len + 1, holes - 1 + token.arity())?;
+	/// Writes the subtree below a root in preorder: visits, score sum, best score, flags
+	/// (exhausted, has children), then the children.
+	fn save(&self, out: &mut impl Write, shape: &Shape) -> io::Result<()> {
+		let mut pending = vec![(self, 0, 1)];
+		while let Some((node, len, holes)) = pending.pop() {
+			let children = node.children(shape.choices(len, holes));
+			write_u32(out, node.visits.load(Ordering::Relaxed))?;
+			write_u64(out, node.score.load(Ordering::Relaxed))?;
+			write_u32(out, node.best_score())?;
+			out.write_all(&[u8::from(node.is_exhausted()) | u8::from(children.is_some()) << 1])?;
+			let children = children.unwrap_or_default();
+			for (child, token) in children
+				.iter()
+				.zip(&shape.productions[..children.len()])
+				.rev()
+			{
+				pending.push((child, len + 1, holes - 1 + token.arity()));
+			}
 		}
 		Ok(())
 	}
 
-	/// Version 1 checkpoints have no best score; it starts at zero.
+	/// Reads a subtree written by [`Node::save`]; version 1 checkpoints have no best score.
 	fn load(
 		input: &mut impl Read,
 		version: u8,
 		shape: &Shape,
-		len: usize,
-		holes: usize,
 		nodes: &mut usize,
 	) -> io::Result<Node> {
-		let mut node = Node {
-			visits: AtomicU32::new(read_u32(input)?),
-			score: AtomicU64::new(read_u64(input)?),
-			best: AtomicU32::new(if version >= 2 { read_u32(input)? } else { 0 }),
-			..Node::default()
-		};
-		let flags = read_u8(input)?;
-		if flags & 1 != 0 {
-			*node.best.get_mut() |= EXHAUSTED;
-		}
-		if flags & 2 != 0 {
-			let n = shape.choices(len, holes);
-			if n == 0 {
-				return Err(io::Error::new(
-					io::ErrorKind::InvalidData,
-					"invalid checkpoint: children below a complete expression",
-				));
-			}
-			let children = shape.productions[..n]
-				.iter()
-				.map(|token| {
-					Node::load(
-						input,
-						version,
-						shape,
+		let mut root = Node::default();
+		let mut pending: Vec<(*mut Node, usize, usize)> = vec![(&mut root, 0, 1)];
+		let result = (|| {
+			while let Some((node, len, holes)) = pending.pop() {
+				let node = unsafe { &mut *node };
+				*node.visits.get_mut() = read_u32(input)?;
+				*node.score.get_mut() = read_u64(input)?;
+				*node.best.get_mut() = if version >= 2 { read_u32(input)? } else { 0 };
+				let flags = read_u8(input)?;
+				if flags & 1 != 0 {
+					*node.best.get_mut() |= EXHAUSTED;
+				}
+				if flags & 2 == 0 {
+					continue;
+				}
+				let n = shape.choices(len, holes);
+				if n == 0 {
+					return Err(io::Error::new(
+						io::ErrorKind::InvalidData,
+						"invalid checkpoint: children below a complete expression",
+					));
+				}
+				let children =
+					Box::into_raw((0..n).map(|_| Node::default()).collect::<Box<[Node]>>())
+						.cast::<Node>();
+				*node.children.get_mut() = children;
+				*nodes += n;
+				for (i, token) in shape.productions[..n].iter().enumerate().rev() {
+					pending.push((
+						unsafe { children.add(i) },
 						len + 1,
 						holes - 1 + token.arity(),
-						nodes,
-					)
-				})
-				.collect::<io::Result<Box<[Node]>>>()?;
-			*nodes += n;
-			*node.children.get_mut() = Box::into_raw(children).cast();
+					));
+				}
+			}
+			Ok(())
+		})();
+		match result {
+			Ok(()) => Ok(root),
+			Err(error) => {
+				root.free(shape);
+				Err(error)
+			}
 		}
-		Ok(node)
 	}
 
-	fn free(&mut self, shape: &Shape, len: usize, holes: usize) {
-		let children = *self.children.get_mut();
-		if children.is_null() {
-			return;
-		}
-		let n = shape.choices(len, holes);
-		let mut children = unsafe { Box::from_raw(ptr::slice_from_raw_parts_mut(children, n)) };
-		for (child, token) in children.iter_mut().zip(shape.productions) {
-			child.free(shape, len + 1, holes - 1 + token.arity());
+	fn free(&mut self, shape: &Shape) {
+		let mut pending = vec![(*self.children.get_mut(), 0, 1)];
+		while let Some((children, len, holes)) = pending.pop() {
+			if children.is_null() {
+				continue;
+			}
+			let n = shape.choices(len, holes);
+			let mut children = unsafe { Box::from_raw(ptr::slice_from_raw_parts_mut(children, n)) };
+			for (child, token) in children.iter_mut().zip(shape.productions) {
+				pending.push((
+					*child.children.get_mut(),
+					len + 1,
+					holes - 1 + token.arity(),
+				));
+			}
 		}
 	}
 }
@@ -306,7 +329,7 @@ struct Tree<'a> {
 
 impl Drop for Tree<'_> {
 	fn drop(&mut self) {
-		self.root.free(self.shape, 0, 1);
+		self.root.free(self.shape);
 	}
 }
 
@@ -374,8 +397,20 @@ struct Shared<'a, W> {
 	nodes: AtomicUsize,
 	playouts: Vec<Counter>,
 	best_score: AtomicU32,
+	exploration: AtomicU32,
 	low_score: AtomicU32,
 	best: Mutex<Vec<Token>>,
+}
+
+/// Stops the search when the thread holding it panics, so the other threads finish.
+struct StopOnPanic<'a>(&'a AtomicBool);
+
+impl Drop for StopOnPanic<'_> {
+	fn drop(&mut self) {
+		if thread::panicking() {
+			self.0.store(true, Ordering::Relaxed);
+		}
+	}
 }
 
 fn worker<W: Word, const DIVISION: bool>(
@@ -384,6 +419,7 @@ fn worker<W: Word, const DIVISION: bool>(
 	thread: usize,
 	seed: u64,
 ) -> u64 {
+	let _stop_on_panic = StopOnPanic(&shared.stop);
 	let shape = tree.shape;
 	let config = shared.config;
 	let max_score = Samples::<W>::max_score();
@@ -411,6 +447,7 @@ fn worker<W: Word, const DIVISION: bool>(
 		let mut node = &tree.root;
 		let mut visits = node.visit(per_descent);
 		path.push(node);
+		let exploration = f32::from_bits(shared.exploration.load(Ordering::Relaxed));
 		let high = shared.best_score.load(Ordering::Relaxed);
 		let low = shared.low_score.load(Ordering::Relaxed).min(high);
 		let inv_span = 1.0 / (high - low).max(1) as f32;
@@ -433,7 +470,7 @@ fn worker<W: Word, const DIVISION: bool>(
 			let Some(i) = select(
 				children,
 				visits,
-				config.exploration as f32,
+				exploration,
 				config.max_weight,
 				low as f32,
 				inv_span,
@@ -506,7 +543,7 @@ fn save<W: Word>(path: &Path, trees: &[Tree], samples: [&Samples<W>; 2]) -> io::
 	write_header(&mut out, shape.productions, shape.max_len, samples)?;
 	write_u32(&mut out, trees.len() as u32)?;
 	for tree in trees {
-		tree.root.save(&mut out, shape, 0, 1)?;
+		tree.root.save(&mut out, shape)?;
 	}
 	out.into_inner()?.sync_all()?;
 	fs::rename(partial, path)
@@ -531,7 +568,7 @@ pub fn search<W: Word>(
 		Some((mut input, version)) => (0..read_u32(&mut input)?)
 			.map(|_| {
 				Ok(Tree {
-					root: Node::load(&mut input, version, &shape, 0, 1, &mut nodes)?,
+					root: Node::load(&mut input, version, &shape, &mut nodes)?,
 					shape: &shape,
 				})
 			})
@@ -569,6 +606,7 @@ pub fn search<W: Word>(
 				.unwrap_or(0),
 		),
 		low_score: AtomicU32::new(u32::MAX),
+		exploration: AtomicU32::new((config.exploration as f32).to_bits()),
 		best: Mutex::new(Vec::new()),
 	};
 	let report = || {
@@ -583,13 +621,16 @@ pub fn search<W: Word>(
 			nodes: shared.nodes.load(Ordering::Relaxed).min(config.max_nodes),
 			best_score: f64::from(shared.best_score.load(Ordering::Relaxed))
 				/ f64::from(Samples::<W>::max_score()),
+			exploration: f64::from(f32::from_bits(shared.exploration.load(Ordering::Relaxed))),
 			best: &best,
 		});
 	};
 	let (playouts, elapsed, saved) = thread::scope(|scope| {
 		let monitor = scope.spawn(|| -> io::Result<()> {
+			let _stop_on_panic = StopOnPanic(&shared.stop);
 			let (mut next_progress, mut next_save) =
 				(start + config.progress_every, start + config.save_every);
+			let (mut best, mut stalled_since, mut scale) = (0, start, 1.0);
 			while !shared.stop.load(Ordering::Relaxed) {
 				thread::park_timeout(Duration::from_millis(50));
 				if config
@@ -599,6 +640,24 @@ pub fn search<W: Word>(
 					shared.stop.store(true, Ordering::Relaxed);
 				}
 				let now = Instant::now();
+				let current = shared.best_score.load(Ordering::Relaxed);
+				if current > best {
+					(best, stalled_since, scale) = (current, now, f64::max(scale / 2.0, 1.0));
+				} else if now >= stalled_since + config.stall {
+					let doubled = scale * 2.0;
+					(stalled_since, scale) = (
+						now,
+						if doubled > MAX_EXPLORATION_SCALE {
+							1.0
+						} else {
+							doubled
+						},
+					);
+				}
+				let exploration = (config.exploration * scale) as f32;
+				shared
+					.exploration
+					.store(exploration.to_bits(), Ordering::Relaxed);
 				if now >= next_progress {
 					report();
 					next_progress += config.progress_every;

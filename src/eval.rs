@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::expr::{BinaryOp, Token, UnaryOp};
 
 pub const SAMPLES: usize = 16;
@@ -190,6 +192,18 @@ impl<W: Word> Samples<W> {
 		let mut columns = inputs;
 		columns.extend(constants.iter().map(|&c| [W::from_reg(c); SAMPLES]));
 		Samples::from_columns(columns, output)
+	}
+
+	/// Adds a leaf column, e.g. the values of a compressed expression.
+	pub fn push(&mut self, column: Lanes<W>) {
+		self.divisors.push(column.map(W::divisor));
+		self.columns.push(column);
+	}
+
+	/// Removes the leaf columns in `range`; the leaves after it move down.
+	pub fn remove(&mut self, range: Range<usize>) {
+		self.columns.drain(range.clone());
+		self.divisors.drain(range);
 	}
 
 	pub fn from_columns(columns: Vec<Lanes<W>>, output: Lanes<W>) -> Samples<W> {

@@ -3,18 +3,17 @@ use std::io::{self, Read, Write};
 use crate::{
 	eval::{Lanes, SAMPLES, Samples, Word},
 	expr::{BinaryOp, Token, UnaryOp},
+	mcts::{Problem, Term},
 };
 
 const MAGIC: &[u8; 7] = b"r2deob\0";
-const VERSION: u8 = 2;
+const VERSION: u8 = 3;
 
 /// The part of a checkpoint preceding the trees.
 pub struct Header<W> {
 	pub version: u8,
-	pub productions: Vec<Token>,
 	pub max_len: usize,
-	pub samples: Samples<W>,
-	pub verification: Samples<W>,
+	pub problem: Problem<W>,
 }
 
 fn invalid(message: &str) -> io::Error {
@@ -87,27 +86,45 @@ fn read_lanes<W: Word>(input: &mut impl Read) -> io::Result<Lanes<W>> {
 	Ok(lanes)
 }
 
+fn write_tokens(out: &mut impl Write, tokens: &[Token]) -> io::Result<()> {
+	write_u32(out, tokens.len() as u32)?;
+	tokens
+		.iter()
+		.try_for_each(|&token| out.write_all(&encode(token)))
+}
+
+fn read_tokens(input: &mut impl Read) -> io::Result<Vec<Token>> {
+	(0..read_u32(input)?)
+		.map(|_| {
+			let mut bytes = [0; 2];
+			input.read_exact(&mut bytes)?;
+			decode(bytes)
+		})
+		.collect()
+}
+
 pub fn write_header<W: Word>(
 	out: &mut impl Write,
-	productions: &[Token],
 	max_len: usize,
-	batches: [&Samples<W>; 2],
+	problem: &Problem<W>,
 ) -> io::Result<()> {
 	out.write_all(MAGIC)?;
 	out.write_all(&[VERSION])?;
 	write_u32(out, W::BITS)?;
 	write_u32(out, SAMPLES as u32)?;
 	write_u32(out, max_len as u32)?;
-	write_u32(out, productions.len() as u32)?;
-	for &token in productions {
-		out.write_all(&encode(token))?;
-	}
-	for samples in batches {
+	write_tokens(out, &problem.productions)?;
+	for samples in [&problem.samples, &problem.verification] {
 		for lanes in samples.columns.iter().chain([&samples.output]) {
 			write_lanes(out, lanes)?;
 		}
 	}
-	Ok(())
+	write_u32(out, problem.library.len() as u32)?;
+	for term in &problem.library {
+		write_u32(out, term.first as u32)?;
+		write_tokens(out, &term.tokens)?;
+	}
+	write_u32(out, problem.first as u32)
 }
 
 pub fn read_header<W: Word>(input: &mut impl Read) -> io::Result<Header<W>> {
@@ -127,13 +144,7 @@ pub fn read_header<W: Word>(input: &mut impl Read) -> io::Result<Header<W>> {
 		return Err(invalid("different sample count"));
 	}
 	let max_len = read_u32(input)? as usize;
-	let productions = (0..read_u32(input)?)
-		.map(|_| {
-			let mut bytes = [0; 2];
-			input.read_exact(&mut bytes)?;
-			decode(bytes)
-		})
-		.collect::<io::Result<Vec<_>>>()?;
+	let productions = read_tokens(input)?;
 	let leaves = productions
 		.iter()
 		.filter(|token| token.arity() == 0)
@@ -146,11 +157,27 @@ pub fn read_header<W: Word>(input: &mut impl Read) -> io::Result<Header<W>> {
 	};
 	let samples = batch()?;
 	let verification = batch()?;
+	let (library, first) = if version >= 3 {
+		let library = (0..read_u32(input)?)
+			.map(|_| {
+				let first = read_u32(input)? as usize;
+				let tokens = read_tokens(input)?;
+				Ok(Term { tokens, first })
+			})
+			.collect::<io::Result<_>>()?;
+		(library, read_u32(input)? as usize)
+	} else {
+		(Vec::new(), 0)
+	};
 	Ok(Header {
 		version,
-		productions,
 		max_len,
-		samples,
-		verification,
+		problem: Problem {
+			productions,
+			samples,
+			verification,
+			library,
+			first,
+		},
 	})
 }

@@ -3,6 +3,7 @@ use std::{
 	fs::File,
 	io::{BufReader, Read},
 	path::Path,
+	sync::Mutex,
 	time::Duration,
 };
 
@@ -13,8 +14,8 @@ use polkavm::{
 use crate::{
 	checkpoint,
 	eval::{SAMPLES, Samples, Word},
-	expr::{Expression, Grammar},
-	mcts::{self, SearchConfig},
+	expr::{Expression, Grammar, Token},
+	mcts::{self, Problem, SearchConfig, Term},
 };
 
 #[derive(Debug)]
@@ -82,14 +83,56 @@ pub struct Status {
 	pub best_score: f64,
 	pub exploration: f64,
 	pub best: Option<Expression>,
+	/// Definitions of the compressed leaves that `best` refers to, directly or through other
+	/// definitions, and no earlier status included, with their indices in `M0`, `M1`, ...
+	pub macros: Vec<(usize, Expression)>,
 }
 
 #[derive(Debug)]
 pub struct Synthesis {
 	pub expression: Option<Expression>,
+	/// Definitions of the compressed leaves that `expression` refers to, directly or through
+	/// other definitions, with their indices in `M0`, `M1`, ...
+	pub macros: Vec<(usize, Expression)>,
 	pub exhausted: bool,
 	pub playouts: u64,
 	pub elapsed: Duration,
+}
+
+/// `term` with leaves named after the inputs and constants in `base`, then `M{term.first}`
+/// up to the library entry before `end`.
+fn expression(base: &[String], term: &Term, end: usize) -> Expression {
+	Expression {
+		tokens: term.tokens.clone(),
+		leaves: base
+			.iter()
+			.cloned()
+			.chain((term.first..end).map(|entry| format!("M{entry}")))
+			.collect(),
+	}
+}
+
+/// Indices of the `library` entries that `term` refers to, directly or through other entries.
+fn referenced(term: &Term, base_leaves: usize, library: &[Term]) -> Vec<usize> {
+	let mark = |term: &Term, referenced: &mut [bool]| {
+		for &token in &term.tokens {
+			if let Token::Leaf(leaf) = token
+				&& let Some(offset) = usize::from(leaf).checked_sub(base_leaves)
+			{
+				referenced[term.first + offset] = true;
+			}
+		}
+	};
+	let mut referenced = vec![false; library.len()];
+	mark(term, &mut referenced);
+	for entry in (0..library.len()).rev() {
+		if referenced[entry] {
+			mark(&library[entry], &mut referenced);
+		}
+	}
+	(0..library.len())
+		.filter(|&entry| referenced[entry])
+		.collect()
 }
 
 pub struct Session {
@@ -208,25 +251,45 @@ impl Session {
 	) -> Result<Synthesis, Error> {
 		let productions = grammar.productions(self.input_regs.len());
 		let mut checkpoint = resume.map(File::open).transpose()?.map(BufReader::new);
-		let (samples, verification, version) = match &mut checkpoint {
+		let base_leaves = self.input_regs.len() + grammar.constants.len();
+		let (problem, version) = match &mut checkpoint {
 			Some(input) => {
 				let header = checkpoint::read_header::<W>(input)?;
-				if header.productions != productions || header.max_len != config.max_len {
+				let problem = header.problem;
+				let base: Vec<Token> = problem
+					.productions
+					.iter()
+					.copied()
+					.filter(
+						|token| !matches!(token, Token::Leaf(leaf) if usize::from(*leaf) >= base_leaves),
+					)
+					.collect();
+				if base != productions || header.max_len != config.max_len {
 					return Err(Error::Checkpoint(
 						"it was made with different --ops, --consts or --max-len",
 					));
 				}
-				self.check(&header.samples)?;
-				self.check(&header.verification)?;
-				(header.samples, header.verification, header.version)
+				let macros = problem.library.len().checked_sub(problem.first);
+				if macros.is_none_or(|macros| problem.samples.columns.len() != base_leaves + macros)
+				{
+					return Err(Error::Checkpoint("its compressed leaves are inconsistent"));
+				}
+				self.check(&problem.samples)?;
+				self.check(&problem.verification)?;
+				(problem, header.version)
 			}
-			None => (
-				self.sample::<W>(&grammar.constants, false)?,
-				self.sample::<W>(&grammar.constants, true)?,
-				0,
-			),
+			None => {
+				let problem = Problem {
+					productions,
+					samples: self.sample::<W>(&grammar.constants, false)?,
+					verification: self.sample::<W>(&grammar.constants, true)?,
+					library: Vec::new(),
+					first: 0,
+				};
+				(problem, 0)
+			}
 		};
-		let leaves: Vec<String> = self
+		let base: Vec<String> = self
 			.fcn_config
 			.input_regs
 			.into_iter()
@@ -234,32 +297,46 @@ impl Session {
 			.collect();
 		drop(self.instance);
 
+		let shown = Mutex::new(Vec::new());
 		let report = |p: &mcts::Progress| {
+			let mut shown = shown.lock().unwrap();
+			shown.resize(p.library.len(), false);
+			let macros = referenced(p.best, base_leaves, p.library)
+				.into_iter()
+				.filter(|&entry| !std::mem::replace(&mut shown[entry], true))
+				.map(|entry| (entry, expression(&base, &p.library[entry], entry)))
+				.collect();
 			progress(&Status {
 				elapsed: p.elapsed,
 				playouts: p.playouts,
 				nodes: p.nodes,
 				best_score: p.best_score,
 				exploration: p.exploration,
-				best: (!p.best.is_empty()).then(|| Expression {
-					tokens: p.best.to_vec(),
-					leaves: leaves.clone(),
-				}),
+				best: (!p.best.tokens.is_empty())
+					.then(|| expression(&base, p.best, p.library.len())),
+				macros,
 			})
 		};
 		let resume = checkpoint
 			.as_mut()
 			.map(|input| (input as &mut dyn Read, version));
-		let outcome = mcts::search(
-			&productions,
-			&samples,
-			&verification,
-			config,
-			resume,
-			&report,
-		)?;
+		let outcome = mcts::search(problem, config, resume, &report)?;
+		let library = &outcome.library;
+		let macros = outcome
+			.solution
+			.as_ref()
+			.map_or_else(Vec::new, |solution| {
+				referenced(solution, base_leaves, library)
+			})
+			.into_iter()
+			.map(|entry| (entry, expression(&base, &library[entry], entry)))
+			.collect();
 		Ok(Synthesis {
-			expression: outcome.tokens.map(|tokens| Expression { tokens, leaves }),
+			expression: outcome
+				.solution
+				.as_ref()
+				.map(|solution| expression(&base, solution, library.len())),
+			macros,
 			exhausted: outcome.exhausted,
 			playouts: outcome.playouts,
 			elapsed: outcome.elapsed,
@@ -277,6 +354,28 @@ fn parse_reg(name: &str) -> Result<Reg, Error> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::expr::BinaryOp;
+
+	#[test]
+	fn test_macro_references() {
+		let (add, leaf) = (Token::Binary(BinaryOp::Add), Token::Leaf);
+		let term = |tokens: &[Token], first| Term {
+			tokens: tokens.to_vec(),
+			first,
+		};
+		let library = [
+			term(&[add, leaf(0), leaf(1)], 0),
+			term(&[add, leaf(2), leaf(0)], 0),
+			term(&[add, leaf(2), leaf(2)], 1),
+			term(&[add, leaf(1), leaf(1)], 1),
+		];
+		let best = term(&[add, leaf(3), leaf(0)], 1);
+		assert_eq!(referenced(&best, 2, &library), [0, 1, 2]);
+		assert_eq!(referenced(&term(&[leaf(4)], 1), 2, &library), [3]);
+		let base = ["a0".to_string(), "a1".to_string()];
+		assert_eq!(expression(&base, &best, 4).to_string(), "(M2 + a0)");
+		assert_eq!(expression(&base, &library[1], 1).to_string(), "(M0 + a0)");
+	}
 
 	fn session(export: &str, input_regs: &[&str], width: Width) -> Session {
 		Session::init(FcnConfig {

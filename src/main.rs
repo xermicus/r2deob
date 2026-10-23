@@ -73,6 +73,9 @@ struct Args {
 	/// Playout seed [default: random]
 	#[arg(long)]
 	seed: Option<u64>,
+	/// Seconds without a new best after which the best expressions become new leaves (0: never)
+	#[arg(long, default_value_t = SearchConfig::default().compress_after.map_or(0.0, |after| after.as_secs_f64()))]
+	compress_after: f64,
 	/// Seconds between progress lines on stderr
 	#[arg(long, default_value_t = SearchConfig::default().progress_every.as_secs_f64())]
 	stats: f64,
@@ -103,6 +106,9 @@ fn print_status(status: &Status) {
 	match &status.best {
 		Some(best) => eprintln!("  {best}"),
 		None => eprintln!(),
+	}
+	for (i, definition) in &status.macros {
+		eprintln!("    M{i} = {definition}");
 	}
 }
 
@@ -161,6 +167,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 			save: args.save.clone(),
 			save_every: Duration::from_secs_f64(args.save_every),
 			interrupt: Some(&INTERRUPT),
+			compress_after: (args.compress_after > 0.0)
+				.then(|| Duration::from_secs_f64(args.compress_after)),
 		};
 		let synthesis = Session::init(target.clone())?.deobfuscate(
 			&grammar,
@@ -177,6 +185,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 			Some(expression) => {
 				solved += 1;
 				println!("Winner! {expression}");
+				for (i, definition) in &synthesis.macros {
+					println!("    M{i} = {definition}");
+				}
 			}
 			None if INTERRUPT.load(Ordering::Relaxed) => println!("Interrupted"),
 			None if synthesis.exhausted => println!("Search space exhausted"),

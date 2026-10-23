@@ -13,7 +13,7 @@ use std::{
 
 use crate::{
 	checkpoint::{read_u8, read_u32, read_u64, write_header, write_u32, write_u64},
-	eval::{Evaluator, Samples, Word},
+	eval::{Evaluator, Lanes, Samples, Word},
 	expr::{BinaryOp, Token},
 };
 
@@ -24,7 +24,7 @@ pub struct SearchConfig {
 	pub max_len: usize,
 	pub exploration: f64,
 	/// Time without a new best after which exploration doubles, cycling back to the base value
-	/// after [`MAX_EXPLORATION_SCALE`]; every new best halves it.
+	/// after `MAX_EXPLORATION_SCALE`; every new best halves it.
 	pub stall: Duration,
 	/// Weight of a node's best playout score against its mean in UCT, from 0 to 1.
 	pub max_weight: f32,
@@ -39,6 +39,10 @@ pub struct SearchConfig {
 	pub save_every: Duration,
 	/// Stops the search like a timeout when set, e.g. from a Ctrl-C handler.
 	pub interrupt: Option<&'static AtomicBool>,
+	/// Time without a new best after which the best expressions of the trees become leaves,
+	/// the oldest compressed ones beyond `MACRO_LEAVES` drop out, and the search restarts
+	/// over the new leaf set.
+	pub compress_after: Option<Duration>,
 }
 
 impl Default for SearchConfig {
@@ -59,16 +63,41 @@ impl Default for SearchConfig {
 			save: None,
 			save_every: Duration::from_secs(600),
 			interrupt: None,
+			compress_after: Some(Duration::from_secs(30)),
 		}
 	}
 }
 
+/// Tokens whose leaves after the inputs and constants are the library entries `first`,
+/// `first + 1`, ...
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Term {
+	pub tokens: Vec<Token>,
+	pub first: usize,
+}
+
+/// Compressed expressions, oldest first; each refers only to entries before it.
+pub type Library = Vec<Term>;
+
+/// What a search runs on: productions ordered by arity, whose leaves are the columns of both
+/// sample batches, the inputs and constants followed by the library entries from `first` on.
+#[derive(Debug, Clone)]
+pub struct Problem<W> {
+	pub productions: Vec<Token>,
+	pub samples: Samples<W>,
+	pub verification: Samples<W>,
+	pub library: Library,
+	/// The library entry of the first leaf after the inputs and constants.
+	pub first: usize,
+}
+
 #[derive(Debug)]
 pub struct Outcome {
-	pub tokens: Option<Vec<Token>>,
+	pub solution: Option<Term>,
 	pub exhausted: bool,
 	pub playouts: u64,
 	pub elapsed: Duration,
+	pub library: Library,
 }
 
 pub struct Progress<'a> {
@@ -78,7 +107,8 @@ pub struct Progress<'a> {
 	/// Best playout score so far, from 0 to 1.
 	pub best_score: f64,
 	pub exploration: f64,
-	pub best: &'a [Token],
+	pub best: &'a Term,
+	pub library: &'a [Term],
 }
 
 /// Leftmost derivations in prefix order: the derived tokens are always a prefix of the
@@ -92,6 +122,16 @@ struct Shape<'a> {
 }
 
 const MAX_EXPLORATION_SCALE: f64 = 32.0;
+
+/// Expressions compressed per stall, and the size of each tree's elite.
+const COMPRESSED_PER_ROUND: usize = 4;
+
+/// The newest library entries that are leaves; older ones live on in the entries built from
+/// them.
+const MACRO_LEAVES: usize = 32;
+
+/// Leaf indices are `u8`, with `u8::MAX` reserved by the evaluator.
+const MAX_LEAVES: usize = u8::MAX as usize;
 
 /// Leaf, unary and binary weights; keeps random expansions subcritical.
 const PLAYOUT_WEIGHTS: [usize; 3] = [3, 1, 2];
@@ -321,13 +361,60 @@ impl Node {
 	}
 }
 
-#[repr(align(64))]
-struct Tree<'a> {
-	root: Node,
-	shape: &'a Shape<'a>,
+/// An expression with its values on the search samples.
+struct Candidate<W> {
+	score: u32,
+	column: Lanes<W>,
+	tokens: Vec<Token>,
 }
 
-impl Drop for Tree<'_> {
+#[repr(align(64))]
+struct Tree<'a, W> {
+	root: Node,
+	shape: &'a Shape<'a>,
+	/// The best expressions of this tree whose values differ from each other and from all
+	/// leaves, best first; candidates for compression.
+	elite: Mutex<Vec<Candidate<W>>>,
+	elite_min: AtomicU32,
+}
+
+impl<'a, W: Word> Tree<'a, W> {
+	fn new(root: Node, shape: &'a Shape<'a>) -> Tree<'a, W> {
+		Tree {
+			root,
+			shape,
+			elite: Mutex::new(Vec::new()),
+			elite_min: AtomicU32::new(0),
+		}
+	}
+
+	#[inline]
+	fn offer(&self, score: u32, column: &Lanes<W>, tokens: &[Token], leaves: &[Lanes<W>]) {
+		if score <= self.elite_min.load(Ordering::Relaxed) || leaves.contains(column) {
+			return;
+		}
+		let mut elite = self.elite.lock().unwrap();
+		if elite.iter().any(|candidate| candidate.column == *column) {
+			return;
+		}
+		let position = elite.partition_point(|candidate| candidate.score >= score);
+		elite.insert(
+			position,
+			Candidate {
+				score,
+				column: *column,
+				tokens: tokens.to_vec(),
+			},
+		);
+		elite.truncate(COMPRESSED_PER_ROUND);
+		if elite.len() == COMPRESSED_PER_ROUND {
+			self.elite_min
+				.store(elite[COMPRESSED_PER_ROUND - 1].score, Ordering::Relaxed);
+		}
+	}
+}
+
+impl<W> Drop for Tree<'_, W> {
 	fn drop(&mut self) {
 		self.root.free(self.shape);
 	}
@@ -387,19 +474,73 @@ fn select(
 #[derive(Default)]
 struct Counter(AtomicU64);
 
-struct Shared<'a, W> {
-	samples: &'a Samples<W>,
-	verification: &'a Samples<W>,
-	config: &'a SearchConfig,
+/// State that outlives a round.
+struct Global {
+	start: Instant,
 	deadline: Option<Instant>,
+	best_score: AtomicU32,
+	best: Mutex<Term>,
+	playouts: AtomicU64,
+}
+
+impl<W: Word> Problem<W> {
+	/// Adds the best distinct `candidates` to the library and as leaves, keeping the newest
+	/// [`MACRO_LEAVES`] entries as leaves; returns how many were added.
+	fn compress<const DIVISION: bool>(
+		&mut self,
+		mut candidates: Vec<Candidate<W>>,
+		max_len: usize,
+	) -> usize {
+		let base = self.samples.columns.len() - (self.library.len() - self.first);
+		let window = MACRO_LEAVES.min(MAX_LEAVES - base);
+		candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.score));
+		let mut evaluator = Evaluator::new(max_len);
+		let mut added = 0;
+		for candidate in candidates {
+			if added == COMPRESSED_PER_ROUND.min(window) {
+				break;
+			}
+			if self.samples.columns.contains(&candidate.column) {
+				continue;
+			}
+			let verification = *evaluator.eval::<DIVISION>(&candidate.tokens, &self.verification);
+			self.samples.push(candidate.column);
+			self.verification.push(verification);
+			self.library.push(Term {
+				tokens: candidate.tokens,
+				first: self.first,
+			});
+			added += 1;
+		}
+		let evicted = (self.samples.columns.len() - base).saturating_sub(window);
+		self.samples.remove(base..base + evicted);
+		self.verification.remove(base..base + evicted);
+		self.first += evicted;
+		let operations: Vec<Token> = self
+			.productions
+			.iter()
+			.copied()
+			.filter(|token| token.arity() > 0)
+			.collect();
+		self.productions = (0..self.samples.columns.len() as u8)
+			.map(Token::Leaf)
+			.chain(operations)
+			.collect();
+		added
+	}
+}
+
+struct Shared<'a, W> {
+	problem: &'a Problem<W>,
+	config: &'a SearchConfig,
+	global: &'a Global,
 	stop: AtomicBool,
+	stalled: AtomicBool,
 	solution: OnceLock<Vec<Token>>,
 	nodes: AtomicUsize,
 	playouts: Vec<Counter>,
-	best_score: AtomicU32,
 	exploration: AtomicU32,
 	low_score: AtomicU32,
-	best: Mutex<Vec<Token>>,
 }
 
 /// Stops the search when the thread holding it panics, so the other threads finish.
@@ -414,7 +555,7 @@ impl Drop for StopOnPanic<'_> {
 }
 
 fn worker<W: Word, const DIVISION: bool>(
-	tree: &Tree,
+	tree: &Tree<W>,
 	shared: &Shared<W>,
 	thread: usize,
 	seed: u64,
@@ -422,6 +563,8 @@ fn worker<W: Word, const DIVISION: bool>(
 	let _stop_on_panic = StopOnPanic(&shared.stop);
 	let shape = tree.shape;
 	let config = shared.config;
+	let (samples, verification) = (&shared.problem.samples, &shared.problem.verification);
+	let global = shared.global;
 	let max_score = Samples::<W>::max_score();
 	let mut rng = WyRand(seed);
 	let mut evaluator = Evaluator::new(config.max_len);
@@ -435,7 +578,7 @@ fn worker<W: Word, const DIVISION: bool>(
 		if shared.stop.load(Ordering::Relaxed)
 			|| tree.root.is_exhausted()
 			|| descent % 256 == 0
-				&& shared
+				&& global
 					.deadline
 					.is_some_and(|deadline| Instant::now() >= deadline)
 		{
@@ -448,7 +591,7 @@ fn worker<W: Word, const DIVISION: bool>(
 		let mut visits = node.visit(per_descent);
 		path.push(node);
 		let exploration = f32::from_bits(shared.exploration.load(Ordering::Relaxed));
-		let high = shared.best_score.load(Ordering::Relaxed);
+		let high = global.best_score.load(Ordering::Relaxed);
 		let low = shared.low_score.load(Ordering::Relaxed).min(high);
 		let inv_span = 1.0 / (high - low).max(1) as f32;
 
@@ -497,23 +640,22 @@ fn worker<W: Word, const DIVISION: bool>(
 				tokens.push(token);
 				holes = holes - 1 + token.arity();
 			}
-			let score = shared
-				.samples
-				.score(evaluator.eval::<DIVISION>(&tokens, shared.samples));
+			let column = evaluator.eval::<DIVISION>(&tokens, samples);
+			let score = samples.score(column);
+			tree.offer(score, column, &tokens, &samples.columns);
 			if score == max_score
-				&& shared
-					.verification
-					.score(evaluator.eval::<DIVISION>(&tokens, shared.verification))
+				&& verification.score(evaluator.eval::<DIVISION>(&tokens, verification))
 					== max_score
 			{
 				let _ = shared.solution.set(tokens.clone());
 				shared.stop.store(true, Ordering::Relaxed);
 			}
-			if score > shared.best_score.load(Ordering::Relaxed) {
-				let mut best = shared.best.lock().unwrap();
-				if score > shared.best_score.load(Ordering::Relaxed) {
-					shared.best_score.store(score, Ordering::Relaxed);
-					best.clone_from(&tokens);
+			if score > global.best_score.load(Ordering::Relaxed) {
+				let mut best = global.best.lock().unwrap();
+				if score > global.best_score.load(Ordering::Relaxed) {
+					global.best_score.store(score, Ordering::Relaxed);
+					best.tokens.clone_from(&tokens);
+					best.first = shared.problem.first;
 				}
 			}
 			if score < shared.low_score.load(Ordering::Relaxed) {
@@ -536,11 +678,11 @@ fn worker<W: Word, const DIVISION: bool>(
 	playouts
 }
 
-fn save<W: Word>(path: &Path, trees: &[Tree], samples: [&Samples<W>; 2]) -> io::Result<()> {
+fn save<W: Word>(path: &Path, trees: &[Tree<W>], problem: &Problem<W>) -> io::Result<()> {
 	let shape = trees[0].shape;
 	let partial = path.with_extension("partial");
 	let mut out = BufWriter::new(File::create(&partial)?);
-	write_header(&mut out, shape.productions, shape.max_len, samples)?;
+	write_header(&mut out, shape.max_len, problem)?;
 	write_u32(&mut out, trees.len() as u32)?;
 	for tree in trees {
 		tree.root.save(&mut out, shape)?;
@@ -549,35 +691,38 @@ fn save<W: Word>(path: &Path, trees: &[Tree], samples: [&Samples<W>; 2]) -> io::
 	fs::rename(partial, path)
 }
 
-/// Searches for an expression reproducing `samples` and `verification`; `resume` continues
-/// from the trees of a checkpoint whose header (and format version) has already been read.
-pub fn search<W: Word>(
-	productions: &[Token],
-	samples: &Samples<W>,
-	verification: &Samples<W>,
+struct RoundOutcome<W> {
+	solution: Option<Vec<Token>>,
+	/// Ended by a solution, the deadline or an interrupt.
+	finished: bool,
+	exhausted: bool,
+	stalled: bool,
+	candidates: Vec<Candidate<W>>,
+}
+
+/// Searches over a fixed leaf set until a solution, exhaustion, the deadline, an interrupt or a
+/// stall of [`SearchConfig::compress_after`].
+fn run_round<W: Word, const DIVISION: bool>(
+	problem: &Problem<W>,
+	round: u64,
 	config: &SearchConfig,
+	global: &Global,
 	resume: Option<(&mut dyn Read, u8)>,
 	progress: &(dyn Fn(&Progress) + Sync),
-) -> io::Result<Outcome> {
-	let shape = Shape::new(productions, config.max_len);
-	let division = productions
-		.iter()
-		.any(|token| matches!(token, Token::Binary(BinaryOp::DivU | BinaryOp::RemU)));
+) -> io::Result<RoundOutcome<W>> {
+	let shape = Shape::new(&problem.productions, config.max_len);
 	let mut nodes = 0;
-	let trees: Vec<Tree> = match resume {
+	let mut trees: Vec<Tree<W>> = match resume {
 		Some((mut input, version)) => (0..read_u32(&mut input)?)
 			.map(|_| {
-				Ok(Tree {
-					root: Node::load(&mut input, version, &shape, &mut nodes)?,
-					shape: &shape,
-				})
+				Ok(Tree::new(
+					Node::load(&mut input, version, &shape, &mut nodes)?,
+					&shape,
+				))
 			})
 			.collect::<io::Result<_>>()?,
 		None => (0..config.trees.clamp(1, config.threads.max(1)))
-			.map(|_| Tree {
-				root: Node::default(),
-				shape: &shape,
-			})
+			.map(|_| Tree::new(Node::default(), &shape))
 			.collect(),
 	};
 	if trees.is_empty() {
@@ -586,51 +731,57 @@ pub fn search<W: Word>(
 			"invalid checkpoint: no trees",
 		));
 	}
+	let resumed_best = trees
+		.iter()
+		.map(|tree| tree.root.best_score())
+		.max()
+		.unwrap_or(0);
+	global.best_score.fetch_max(resumed_best, Ordering::Relaxed);
 
 	let threads = config.threads.max(1);
-	let start = Instant::now();
 	let shared = Shared {
-		samples,
-		verification,
+		problem,
 		config,
-		deadline: config.timeout.map(|timeout| start + timeout),
+		global,
 		stop: AtomicBool::new(false),
+		stalled: AtomicBool::new(false),
 		solution: OnceLock::new(),
 		nodes: AtomicUsize::new(nodes),
 		playouts: (0..threads).map(|_| Counter::default()).collect(),
-		best_score: AtomicU32::new(
-			trees
-				.iter()
-				.map(|tree| tree.root.best_score())
-				.max()
-				.unwrap_or(0),
-		),
-		low_score: AtomicU32::new(u32::MAX),
 		exploration: AtomicU32::new((config.exploration as f32).to_bits()),
-		best: Mutex::new(Vec::new()),
+		low_score: AtomicU32::new(u32::MAX),
 	};
 	let report = || {
-		let best = shared.best.lock().unwrap();
+		let best = global.best.lock().unwrap();
 		progress(&Progress {
-			elapsed: start.elapsed(),
-			playouts: shared
-				.playouts
-				.iter()
-				.map(|counter| counter.0.load(Ordering::Relaxed))
-				.sum(),
+			elapsed: global.start.elapsed(),
+			playouts: global.playouts.load(Ordering::Relaxed)
+				+ shared
+					.playouts
+					.iter()
+					.map(|counter| counter.0.load(Ordering::Relaxed))
+					.sum::<u64>(),
 			nodes: shared.nodes.load(Ordering::Relaxed).min(config.max_nodes),
-			best_score: f64::from(shared.best_score.load(Ordering::Relaxed))
+			best_score: f64::from(global.best_score.load(Ordering::Relaxed))
 				/ f64::from(Samples::<W>::max_score()),
 			exploration: f64::from(f32::from_bits(shared.exploration.load(Ordering::Relaxed))),
 			best: &best,
+			library: &problem.library,
 		});
 	};
-	let (playouts, elapsed, saved) = thread::scope(|scope| {
+	let round_start = Instant::now();
+	let (playouts, saved) = thread::scope(|scope| {
 		let monitor = scope.spawn(|| -> io::Result<()> {
 			let _stop_on_panic = StopOnPanic(&shared.stop);
+			let elapsed = global.start.elapsed();
+			let next = |every: Duration| {
+				let periods = (elapsed.as_secs_f64() / every.as_secs_f64()).floor() + 1.0;
+				global.start + every.mul_f64(periods)
+			};
 			let (mut next_progress, mut next_save) =
-				(start + config.progress_every, start + config.save_every);
-			let (mut best, mut stalled_since, mut scale) = (0, start, 1.0);
+				(next(config.progress_every), next(config.save_every));
+			let mut best = global.best_score.load(Ordering::Relaxed);
+			let (mut improved_at, mut stalled_since, mut scale) = (round_start, round_start, 1.0);
 			while !shared.stop.load(Ordering::Relaxed) {
 				thread::park_timeout(Duration::from_millis(50));
 				if config
@@ -640,9 +791,10 @@ pub fn search<W: Word>(
 					shared.stop.store(true, Ordering::Relaxed);
 				}
 				let now = Instant::now();
-				let current = shared.best_score.load(Ordering::Relaxed);
+				let current = global.best_score.load(Ordering::Relaxed);
 				if current > best {
-					(best, stalled_since, scale) = (current, now, f64::max(scale / 2.0, 1.0));
+					(best, improved_at, stalled_since) = (current, now, now);
+					scale = f64::max(scale / 2.0, 1.0);
 				} else if now >= stalled_since + config.stall {
 					let doubled = scale * 2.0;
 					(stalled_since, scale) = (
@@ -654,6 +806,13 @@ pub fn search<W: Word>(
 						},
 					);
 				}
+				if config
+					.compress_after
+					.is_some_and(|after| now >= improved_at + after)
+				{
+					shared.stalled.store(true, Ordering::Relaxed);
+					shared.stop.store(true, Ordering::Relaxed);
+				}
 				let exploration = (config.exploration * scale) as f32;
 				shared
 					.exploration
@@ -663,7 +822,7 @@ pub fn search<W: Word>(
 					next_progress += config.progress_every;
 				}
 				if let Some(path) = config.save.as_deref().filter(|_| now >= next_save) {
-					save(path, &trees, [samples, verification])
+					save(path, &trees, problem)
 						.inspect_err(|_| shared.stop.store(true, Ordering::Relaxed))?;
 					next_save += config.save_every;
 				}
@@ -673,34 +832,103 @@ pub fn search<W: Word>(
 		let handles: Vec<_> = (0..threads)
 			.map(|t| {
 				let (tree, shared) = (&trees[t % trees.len()], &shared);
-				let seed = config.seed ^ (t as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
-				scope.spawn(move || match division {
-					true => worker::<W, true>(tree, shared, t, seed),
-					false => worker::<W, false>(tree, shared, t, seed),
-				})
+				let seed = config.seed
+					^ (t as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+					^ round.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+				scope.spawn(move || worker::<W, DIVISION>(tree, shared, t, seed))
 			})
 			.collect();
 		let playouts: u64 = handles
 			.into_iter()
 			.map(|handle| handle.join().unwrap())
 			.sum();
-		let elapsed = start.elapsed();
 		shared.stop.store(true, Ordering::Relaxed);
 		monitor.thread().unpark();
-		(playouts, elapsed, monitor.join().unwrap())
+		(playouts, monitor.join().unwrap())
 	});
 	saved?;
-	if let Some(path) = &config.save {
-		save(path, &trees, [samples, verification])?;
+	global.playouts.fetch_add(playouts, Ordering::Relaxed);
+	let solution = shared.solution.into_inner();
+	let finished = solution.is_some()
+		|| config
+			.interrupt
+			.is_some_and(|interrupt| interrupt.load(Ordering::Relaxed))
+		|| global
+			.deadline
+			.is_some_and(|deadline| Instant::now() >= deadline);
+	let stalled = shared.stalled.load(Ordering::Relaxed);
+	if let Some(path) = config.save.as_deref().filter(|_| finished || !stalled) {
+		save(path, &trees, problem)?;
 	}
 
-	let exhausted = trees.iter().any(|tree| tree.root.is_exhausted());
-	Ok(Outcome {
-		tokens: shared.solution.into_inner(),
-		exhausted,
-		playouts,
-		elapsed,
+	Ok(RoundOutcome {
+		solution,
+		finished,
+		exhausted: trees.iter().any(|tree| tree.root.is_exhausted()),
+		stalled,
+		candidates: trees
+			.iter_mut()
+			.flat_map(|tree| std::mem::take(tree.elite.get_mut().unwrap()))
+			.collect(),
 	})
+}
+
+/// Searches for an expression reproducing both sample batches of `problem`; `resume` continues
+/// from the trees of a checkpoint whose header (and format version) has already been read.
+pub fn search<W: Word>(
+	problem: Problem<W>,
+	config: &SearchConfig,
+	resume: Option<(&mut dyn Read, u8)>,
+	progress: &(dyn Fn(&Progress) + Sync),
+) -> io::Result<Outcome> {
+	match problem
+		.productions
+		.iter()
+		.any(|token| matches!(token, Token::Binary(BinaryOp::DivU | BinaryOp::RemU)))
+	{
+		true => search_rounds::<W, true>(problem, config, resume, progress),
+		false => search_rounds::<W, false>(problem, config, resume, progress),
+	}
+}
+
+fn search_rounds<W: Word, const DIVISION: bool>(
+	mut problem: Problem<W>,
+	config: &SearchConfig,
+	mut resume: Option<(&mut dyn Read, u8)>,
+	progress: &(dyn Fn(&Progress) + Sync),
+) -> io::Result<Outcome> {
+	let start = Instant::now();
+	let global = Global {
+		start,
+		deadline: config.timeout.map(|timeout| start + timeout),
+		best_score: AtomicU32::new(0),
+		best: Mutex::new(Term::default()),
+		playouts: AtomicU64::new(0),
+	};
+	let mut round = 0;
+	loop {
+		let outcome =
+			run_round::<W, DIVISION>(&problem, round, config, &global, resume.take(), progress)?;
+		let added = match config.compress_after {
+			Some(_) if !outcome.finished => {
+				problem.compress::<DIVISION>(outcome.candidates, config.max_len)
+			}
+			_ => 0,
+		};
+		if added == 0 && (outcome.finished || !outcome.stalled) {
+			return Ok(Outcome {
+				solution: outcome.solution.map(|tokens| Term {
+					tokens,
+					first: problem.first,
+				}),
+				exhausted: outcome.exhausted,
+				playouts: global.playouts.load(Ordering::Relaxed),
+				elapsed: start.elapsed(),
+				library: problem.library,
+			});
+		}
+		round += 1;
+	}
 }
 
 #[cfg(test)]
@@ -708,19 +936,73 @@ mod tests {
 	use super::*;
 	use crate::{checkpoint::read_header, eval::SAMPLES, expr::Grammar};
 
+	fn lanes(seed: u64) -> Lanes<u64> {
+		std::array::from_fn(|i| {
+			let x = (seed * SAMPLES as u64 + i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+			(x ^ x >> 31).wrapping_mul(0xbf58_476d_1ce4_e5b9) ^ x >> 29
+		})
+	}
+
+	fn problem(ops: &[&str]) -> Problem<u64> {
+		Problem {
+			productions: Grammar::new(ops, Vec::new()).unwrap().productions(2),
+			samples: Samples::new(vec![lanes(1), lanes(2)], &[], lanes(3)),
+			verification: Samples::new(vec![lanes(4), lanes(5)], &[], lanes(6)),
+			library: Vec::new(),
+			first: 0,
+		}
+	}
+
+	/// Evaluates every library entry from the inputs alone and checks the leaves against it.
+	fn check_library(problem: &Problem<u64>, inputs: &Samples<u64>, leaves: &Samples<u64>) {
+		let mut evaluator = Evaluator::new(64);
+		let mut columns = Vec::new();
+		for term in &problem.library {
+			let visible = inputs.columns.iter().chain(&columns[term.first..]).copied();
+			let samples = Samples::from_columns(visible.collect(), inputs.output);
+			columns.push(*evaluator.eval::<true>(&term.tokens, &samples));
+		}
+		assert_eq!(leaves.columns[..2], inputs.columns);
+		assert_eq!(leaves.columns[2..], columns[problem.first..]);
+		assert_eq!(
+			problem
+				.productions
+				.iter()
+				.filter(|token| token.arity() == 0)
+				.count(),
+			leaves.columns.len()
+		);
+	}
+
+	#[test]
+	fn test_compress_keeps_newest_leaves() {
+		let mut problem = problem(&["add"]);
+		let inputs = (problem.samples.clone(), problem.verification.clone());
+		let mut evaluator = Evaluator::new(3);
+		for _ in 0..MACRO_LEAVES + 5 {
+			let newest = problem.samples.columns.len() as u8 - 1;
+			let tokens = vec![
+				Token::Binary(BinaryOp::Add),
+				Token::Leaf(newest),
+				Token::Leaf(0),
+			];
+			let column = *evaluator.eval::<false>(&tokens, &problem.samples);
+			let candidate = Candidate {
+				score: 0,
+				column,
+				tokens,
+			};
+			assert_eq!(problem.compress::<false>(vec![candidate], 3), 1);
+		}
+		assert_eq!(problem.library.len(), MACRO_LEAVES + 5);
+		assert_eq!(problem.first, 5);
+		check_library(&problem, &inputs.0, &problem.samples);
+		check_library(&problem, &inputs.1, &problem.verification);
+	}
+
 	#[test]
 	fn test_checkpoint_roundtrip() {
-		let lanes = |seed: u64| {
-			std::array::from_fn(|i| {
-				let x = (seed * SAMPLES as u64 + i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
-				(x ^ x >> 31).wrapping_mul(0xbf58_476d_1ce4_e5b9) ^ x >> 29
-			})
-		};
-		let samples = Samples::<u64>::new(vec![lanes(1), lanes(2)], &[], lanes(3));
-		let verification = Samples::<u64>::new(vec![lanes(4), lanes(5)], &[], lanes(6));
-		let productions = Grammar::new(&["add", "mul", "remu", "not"], Vec::new())
-			.unwrap()
-			.productions(2);
+		let problem = problem(&["add", "mul", "remu", "not"]);
 		let dir = std::env::temp_dir().join(format!("r2deob-test-{}", std::process::id()));
 		fs::create_dir_all(&dir).unwrap();
 		let (first, second) = (dir.join("first"), dir.join("second"));
@@ -728,35 +1010,32 @@ mod tests {
 			threads: 2,
 			trees: 2,
 			expand_after: 0,
-			timeout: Some(Duration::from_millis(200)),
+			timeout: Some(Duration::from_millis(400)),
 			save: Some(first.clone()),
+			compress_after: Some(Duration::from_millis(100)),
 			..SearchConfig::default()
 		};
-		let outcome = search(
-			&productions,
-			&samples,
-			&verification,
-			&config,
-			None,
-			&|_| {},
-		)
-		.unwrap();
-		assert!(outcome.tokens.is_none() && outcome.playouts > 0);
+		let outcome = search(problem.clone(), &config, None, &|_| {}).unwrap();
+		assert!(outcome.solution.is_none() && outcome.playouts > 0);
+		assert!(!outcome.library.is_empty());
 
 		let mut input = io::BufReader::new(File::open(&first).unwrap());
 		let header = read_header::<u64>(&mut input).unwrap();
-		assert_eq!(header.productions, productions);
-		assert_eq!(header.samples.output, samples.output);
-		assert_eq!(header.verification.columns[1], verification.columns[1]);
+		assert_eq!(header.problem.library, outcome.library);
+		assert_eq!(header.problem.samples.output, problem.samples.output);
+		check_library(&header.problem, &problem.samples, &header.problem.samples);
+		check_library(
+			&header.problem,
+			&problem.verification,
+			&header.problem.verification,
+		);
 		let resumed = SearchConfig {
 			timeout: Some(Duration::ZERO),
 			save: Some(second.clone()),
 			..config
 		};
 		let outcome = search(
-			&header.productions,
-			&header.samples,
-			&header.verification,
+			header.problem,
 			&resumed,
 			Some((&mut input, header.version)),
 			&|_| {},

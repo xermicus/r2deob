@@ -1,36 +1,44 @@
 # r2deob
 
-deobfuscation PoC with r2 + ESIL
+deobfuscation PoC with [PolkaVM](https://github.com/paritytech/polkavm)
 
 # What
 
-r2deob is a small tool that does some sort of [program synthesis](https://en.wikipedia.org/wiki/Program_synthesis). For a given binary, you can define a function (basically just an offset and amount of instructions to be considered after that offset) as well the input and output register(s). Using [ESIL](https://github.com/radare/radare2), r2deob will then emulate that codesection a couple of times with different random inputs each time and fetch the value stored inside the specified output register after each emulation. Afterwards the generated input/output behaviour is sent to a deobfuscation backend which will try to find an expression that is mathematcially true and semantically represents your target function (this process may or may not deobfuscate something but usually does).
+r2deob is a small tool that does some sort of [program synthesis](https://en.wikipedia.org/wiki/Program_synthesis). For a given PolkaVM program blob, you define a function (an exported symbol) as well as the input and output register(s). r2deob then executes that function in [PolkaVM](https://github.com/paritytech/polkavm) a couple of times with different random inputs and fetches the value stored in the output register after each run. Afterwards the generated input/output behaviour is sent to a deobfuscation backend which will try to find an expression that is mathematically true and semantically represents your target function (this process may or may not deobfuscate something but usually does).
 
 Example:
-Check out the main.c file in the root directory of this repository. It contains the following simple function:
-```c
-int calc (int a, int b) {
-	int d = b * 2;
-	int c = a + d;
-	return c;
+Check out the guest crate in the `guest` directory of this repository. It contains the following simple function:
+```rust
+#[polkavm_derive::polkavm_export]
+extern "C" fn calc(a: i32, b: i32) -> i32 {
+	let d = b.wrapping_mul(2);
+	a.wrapping_add(d)
 }
 ```
 
-Given a binary containing this function at the location "sym.calc" we can define the following deobfuscation target:
+Given the program blob `calc.polkavm` exporting this function, we can define the following deobfuscation target:
 ```rust
-let target = r2deob::engine::FcnConfig {
-	path: "/home/cyrill/r2deob/calc".to_string(), // Path to binary
-	loc: "sym.calc".to_string(), // target location, can be a flag or address
-	len: "12".to_string(), // #numbers of emulation steps before output register is considered
-	input_regs: vec!["esi".to_string(),"edi".to_string()], // Input registers
-	output_reg: "rax".to_string() // Output register
+let target = FcnConfig {
+	path: "calc.polkavm".to_string(), // Path to the program blob
+	export: "calc".to_string(), // Exported function to call
+	input_regs: vec!["a0".to_string(), "a1".to_string()], // Input registers
+	output_reg: "a0".to_string(), // Output register
 };
 ```
 
-r2deob will then find out that the target is semantically identical to the expression "esi + (esi + edi)", because this expression matches the observed input/output behaviour.
+r2deob will then find out that the target is semantically identical to the expression "a1 + (a0 + a1)", because this expression matches the observed input/output behaviour.
 ```
-$ ./target/debug/r2deob
-Winner! (esi+(esi+edi))
+$ cargo run --release
+Winner! (a1 + (a0 + a1))
+```
+
+## Rebuilding the example blob
+
+The guest needs a nightly toolchain with `rust-src` and a `polkatool` matching the `polkavm` version:
+```
+$ cd guest
+$ cargo +nightly build -Z build-std=core -Z json-target-spec --release --target $(polkatool get-target-json-path)
+$ polkatool link --strip --output ../calc.polkavm target/riscv64emac-unknown-none-polkavm/release/calc
 ```
 
 The project is based on [this paper](https://www.usenix.org/system/files/conference/usenixsecurity17/sec17-blazytko.pdf). Check out their [awesome talk](https://media.ccc.de/v/34c3-8789-lets_break_modern_binary_code_obfuscation) and [syntia](https://github.com/RUB-SysSec/syntia) to get an idea on how the Tree deobfuscation backend works.
@@ -39,18 +47,14 @@ The project is based on [this paper](https://www.usenix.org/system/files/confere
 
 Personal fun and learning experience.
 
-Using ESIL for the umulation part also means that you can deobfuscate binaries compiled for any target architecture that is also supported by ESIL (a lot).
-
 # Status and Limitations
 
 Disclaimer: This is just a PoC, YMMV. I didn't test it much yet, the code probably needs cleanup at some places and there are still many TODOs. If you are looking for something that is based on serious research, tested and working I recommend to use [syntia](https://github.com/RUB-SysSec/syntia).
 
-Using ESIL emulation also bounds the tool to the limits of ESIL emulation (syscall support is incomplete ATM, which means that r2deob is very likely to break if you are trying to deobfuscate a code section containing syscalls). That's the main reason I'm considering to add support for generating input/output behaviour by directly executing the binary.
+Target functions must not call host functions (`ecalli`); any execution that does not finish normally aborts tracing.
 
 TODOs
 - Solving expression with constant
 - Improving scoring
-- Add Libevoasm backend?
-- Add user interface (or add to r2pm) and provide some documentation
-- Add support for using custom r2 script during initialization
+- Add user interface and provide some documentation
 - Experimental: Trying automated function deobfuscation based on calling conventions

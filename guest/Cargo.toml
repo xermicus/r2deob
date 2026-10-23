@@ -1,0 +1,15 @@
+[package]
+name = "calc"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+polkavm-derive = "0.37.0"
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = 3
+
+[workspace]

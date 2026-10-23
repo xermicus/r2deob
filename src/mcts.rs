@@ -38,7 +38,7 @@ impl Default for SearchConfig {
 			playouts: 16,
 			max_nodes: 1 << 25,
 			timeout: None,
-			seed: 0,
+			seed: rand::random(),
 		}
 	}
 }

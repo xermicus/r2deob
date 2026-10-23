@@ -60,8 +60,9 @@ struct Args {
 	/// Timeout per run in seconds [default: none]
 	#[arg(long)]
 	timeout: Option<f64>,
-	#[arg(long, default_value_t = 0)]
-	seed: u64,
+	/// Playout seed [default: random]
+	#[arg(long)]
+	seed: Option<u64>,
 	/// Repeat the search on fresh samples and report the median time
 	#[arg(long, default_value_t = 1)]
 	runs: u64,
@@ -95,7 +96,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			playouts: args.playouts,
 			max_nodes: args.max_nodes,
 			timeout: args.timeout.map(Duration::from_secs_f64),
-			seed: args.seed.wrapping_add(run),
+			seed: args
+				.seed
+				.map_or_else(rand::random, |seed| seed.wrapping_add(run)),
 		};
 		let synthesis = Session::init(target.clone())?.deobfuscate(&grammar, &config)?;
 		let rate = synthesis.playouts as f64 / synthesis.elapsed.as_secs_f64() / 1e6;

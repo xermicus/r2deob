@@ -45,7 +45,7 @@ impl Default for SearchConfig {
 			trees: thread::available_parallelism().map_or(1, usize::from),
 			max_len: 15,
 			exploration: 1.0,
-			max_weight: 0.5,
+			max_weight: 1.0,
 			expand_after: 512,
 			playouts: 16,
 			max_nodes: 1 << 25,
@@ -586,12 +586,12 @@ pub fn search<W: Word>(
 			best: &best,
 		});
 	};
-	let (playouts, saved) = thread::scope(|scope| {
+	let (playouts, elapsed, saved) = thread::scope(|scope| {
 		let monitor = scope.spawn(|| -> io::Result<()> {
 			let (mut next_progress, mut next_save) =
 				(start + config.progress_every, start + config.save_every);
 			while !shared.stop.load(Ordering::Relaxed) {
-				thread::sleep(Duration::from_millis(50));
+				thread::park_timeout(Duration::from_millis(50));
 				if config
 					.interrupt
 					.is_some_and(|interrupt| interrupt.load(Ordering::Relaxed))
@@ -625,8 +625,10 @@ pub fn search<W: Word>(
 			.into_iter()
 			.map(|handle| handle.join().unwrap())
 			.sum();
+		let elapsed = start.elapsed();
 		shared.stop.store(true, Ordering::Relaxed);
-		(playouts, monitor.join().unwrap())
+		monitor.thread().unpark();
+		(playouts, elapsed, monitor.join().unwrap())
 	});
 	saved?;
 	if let Some(path) = &config.save {
@@ -638,7 +640,7 @@ pub fn search<W: Word>(
 		tokens: shared.solution.into_inner(),
 		exhausted,
 		playouts,
-		elapsed: start.elapsed(),
+		elapsed,
 	})
 }
 

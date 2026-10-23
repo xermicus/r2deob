@@ -189,6 +189,10 @@ impl<W: Word> Samples<W> {
 	pub fn new(inputs: Vec<Lanes<W>>, constants: &[u64], output: Lanes<W>) -> Samples<W> {
 		let mut columns = inputs;
 		columns.extend(constants.iter().map(|&c| [W::from_reg(c); SAMPLES]));
+		Samples::from_columns(columns, output)
+	}
+
+	pub fn from_columns(columns: Vec<Lanes<W>>, output: Lanes<W>) -> Samples<W> {
 		let divisors = columns
 			.iter()
 			.map(|column| column.map(W::divisor))

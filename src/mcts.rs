@@ -1,7 +1,10 @@
 use std::{
+	fs::{self, File},
+	io::{self, BufWriter, Read, Write},
+	path::{Path, PathBuf},
 	ptr,
 	sync::{
-		OnceLock,
+		Mutex, OnceLock,
 		atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicU64, AtomicUsize, Ordering},
 	},
 	thread,
@@ -9,6 +12,7 @@ use std::{
 };
 
 use crate::{
+	checkpoint::{read_u8, read_u32, read_u64, write_header, write_u32, write_u64},
 	eval::{Evaluator, Samples, Word},
 	expr::{BinaryOp, Token},
 };
@@ -25,6 +29,9 @@ pub struct SearchConfig {
 	pub max_nodes: usize,
 	pub timeout: Option<Duration>,
 	pub seed: u64,
+	pub progress_every: Duration,
+	pub save: Option<PathBuf>,
+	pub save_every: Duration,
 }
 
 impl Default for SearchConfig {
@@ -39,6 +46,9 @@ impl Default for SearchConfig {
 			max_nodes: 1 << 25,
 			timeout: None,
 			seed: rand::random(),
+			progress_every: Duration::from_secs(10),
+			save: None,
+			save_every: Duration::from_secs(600),
 		}
 	}
 }
@@ -49,6 +59,15 @@ pub struct Outcome {
 	pub exhausted: bool,
 	pub playouts: u64,
 	pub elapsed: Duration,
+}
+
+pub struct Progress<'a> {
+	pub elapsed: Duration,
+	pub playouts: u64,
+	pub nodes: usize,
+	/// Best playout score so far, from 0 to 1.
+	pub best_score: f64,
+	pub best: &'a [Token],
 }
 
 /// Leftmost derivations in prefix order: the derived tokens are always a prefix of the
@@ -180,6 +199,56 @@ impl Node {
 		unsafe { std::slice::from_raw_parts(children, n) }
 	}
 
+	/// Preorder: visits, score, flags (exhausted, has children), then the children.
+	fn save(
+		&self,
+		out: &mut impl Write,
+		shape: &Shape,
+		len: usize,
+		holes: usize,
+	) -> io::Result<()> {
+		let children = self.children(shape.choices(len, holes));
+		write_u32(out, self.visits.load(Ordering::Relaxed))?;
+		write_u64(out, self.score.load(Ordering::Relaxed))?;
+		out.write_all(&[u8::from(self.is_exhausted()) | u8::from(children.is_some()) << 1])?;
+		for (child, token) in children.into_iter().flatten().zip(shape.productions) {
+			child.save(out, shape, len + 1, holes - 1 + token.arity())?;
+		}
+		Ok(())
+	}
+
+	fn load(
+		input: &mut impl Read,
+		shape: &Shape,
+		len: usize,
+		holes: usize,
+		nodes: &mut usize,
+	) -> io::Result<Node> {
+		let mut node = Node {
+			visits: AtomicU32::new(read_u32(input)?),
+			score: AtomicU64::new(read_u64(input)?),
+			..Node::default()
+		};
+		let flags = read_u8(input)?;
+		*node.exhausted.get_mut() = flags & 1 != 0;
+		if flags & 2 != 0 {
+			let n = shape.choices(len, holes);
+			if n == 0 {
+				return Err(io::Error::new(
+					io::ErrorKind::InvalidData,
+					"invalid checkpoint: children below a complete expression",
+				));
+			}
+			let children = shape.productions[..n]
+				.iter()
+				.map(|token| Node::load(input, shape, len + 1, holes - 1 + token.arity(), nodes))
+				.collect::<io::Result<Box<[Node]>>>()?;
+			*nodes += n;
+			*node.children.get_mut() = Box::into_raw(children).cast();
+		}
+		Ok(node)
+	}
+
 	fn free(&mut self, shape: &Shape, len: usize, holes: usize) {
 		let children = *self.children.get_mut();
 		if children.is_null() {
@@ -251,6 +320,10 @@ fn select(
 	best.1
 }
 
+#[repr(align(64))]
+#[derive(Default)]
+struct Counter(AtomicU64);
+
 struct Shared<'a, W> {
 	samples: &'a Samples<W>,
 	verification: &'a Samples<W>,
@@ -259,9 +332,17 @@ struct Shared<'a, W> {
 	stop: AtomicBool,
 	solution: OnceLock<Vec<Token>>,
 	nodes: AtomicUsize,
+	playouts: Vec<Counter>,
+	best_score: AtomicU32,
+	best: Mutex<Vec<Token>>,
 }
 
-fn worker<W: Word, const DIVISION: bool>(tree: &Tree, shared: &Shared<W>, seed: u64) -> u64 {
+fn worker<W: Word, const DIVISION: bool>(
+	tree: &Tree,
+	shared: &Shared<W>,
+	thread: usize,
+	seed: u64,
+) -> u64 {
 	let shape = tree.shape;
 	let config = shared.config;
 	let max_score = Samples::<W>::max_score();
@@ -345,10 +426,18 @@ fn worker<W: Word, const DIVISION: bool>(tree: &Tree, shared: &Shared<W>, seed: 
 				let _ = shared.solution.set(tokens.clone());
 				shared.stop.store(true, Ordering::Relaxed);
 			}
+			if score > shared.best_score.load(Ordering::Relaxed) {
+				let mut best = shared.best.lock().unwrap();
+				if score > shared.best_score.load(Ordering::Relaxed) {
+					shared.best_score.store(score, Ordering::Relaxed);
+					best.clone_from(&tokens);
+				}
+			}
 			total += u64::from(score);
 		}
 		total *= u64::from(per_descent / rollouts);
 		playouts += u64::from(rollouts);
+		shared.playouts[thread].0.store(playouts, Ordering::Relaxed);
 		for node in &path {
 			node.score.store(
 				node.score.load(Ordering::Relaxed) + total,
@@ -359,23 +448,58 @@ fn worker<W: Word, const DIVISION: bool>(tree: &Tree, shared: &Shared<W>, seed: 
 	playouts
 }
 
+fn save<W: Word>(path: &Path, trees: &[Tree], samples: [&Samples<W>; 2]) -> io::Result<()> {
+	let shape = trees[0].shape;
+	let partial = path.with_extension("partial");
+	let mut out = BufWriter::new(File::create(&partial)?);
+	write_header(&mut out, shape.productions, shape.max_len, samples)?;
+	write_u32(&mut out, trees.len() as u32)?;
+	for tree in trees {
+		tree.root.save(&mut out, shape, 0, 1)?;
+	}
+	out.into_inner()?.sync_all()?;
+	fs::rename(partial, path)
+}
+
+/// Searches for an expression reproducing `samples` and `verification`; `resume` continues
+/// from the trees of a checkpoint whose header has already been read.
 pub fn search<W: Word>(
 	productions: &[Token],
 	samples: &Samples<W>,
 	verification: &Samples<W>,
 	config: &SearchConfig,
-) -> Outcome {
+	resume: Option<&mut dyn Read>,
+	progress: &(dyn Fn(&Progress) + Sync),
+) -> io::Result<Outcome> {
 	let shape = Shape::new(productions, config.max_len);
 	let division = productions
 		.iter()
 		.any(|token| matches!(token, Token::Binary(BinaryOp::DivU | BinaryOp::RemU)));
-	let trees: Vec<Tree> = (0..config.trees.clamp(1, config.threads.max(1)))
-		.map(|_| Tree {
-			root: Node::default(),
-			shape: &shape,
-		})
-		.collect();
+	let mut nodes = 0;
+	let trees: Vec<Tree> = match resume {
+		Some(mut input) => (0..read_u32(&mut input)?)
+			.map(|_| {
+				Ok(Tree {
+					root: Node::load(&mut input, &shape, 0, 1, &mut nodes)?,
+					shape: &shape,
+				})
+			})
+			.collect::<io::Result<_>>()?,
+		None => (0..config.trees.clamp(1, config.threads.max(1)))
+			.map(|_| Tree {
+				root: Node::default(),
+				shape: &shape,
+			})
+			.collect(),
+	};
+	if trees.is_empty() {
+		return Err(io::Error::new(
+			io::ErrorKind::InvalidData,
+			"invalid checkpoint: no trees",
+		));
+	}
 
+	let threads = config.threads.max(1);
 	let start = Instant::now();
 	let shared = Shared {
 		samples,
@@ -384,30 +508,138 @@ pub fn search<W: Word>(
 		deadline: config.timeout.map(|timeout| start + timeout),
 		stop: AtomicBool::new(false),
 		solution: OnceLock::new(),
-		nodes: AtomicUsize::new(0),
+		nodes: AtomicUsize::new(nodes),
+		playouts: (0..threads).map(|_| Counter::default()).collect(),
+		best_score: AtomicU32::new(0),
+		best: Mutex::new(Vec::new()),
 	};
-	let playouts = thread::scope(|scope| {
-		let handles: Vec<_> = (0..config.threads.max(1))
+	let report = || {
+		let best = shared.best.lock().unwrap();
+		progress(&Progress {
+			elapsed: start.elapsed(),
+			playouts: shared
+				.playouts
+				.iter()
+				.map(|counter| counter.0.load(Ordering::Relaxed))
+				.sum(),
+			nodes: shared.nodes.load(Ordering::Relaxed).min(config.max_nodes),
+			best_score: f64::from(shared.best_score.load(Ordering::Relaxed))
+				/ f64::from(Samples::<W>::max_score()),
+			best: &best,
+		});
+	};
+	let (playouts, saved) = thread::scope(|scope| {
+		let monitor = scope.spawn(|| -> io::Result<()> {
+			let (mut next_progress, mut next_save) =
+				(start + config.progress_every, start + config.save_every);
+			while !shared.stop.load(Ordering::Relaxed) {
+				thread::sleep(Duration::from_millis(50));
+				let now = Instant::now();
+				if now >= next_progress {
+					report();
+					next_progress += config.progress_every;
+				}
+				if let Some(path) = config.save.as_deref().filter(|_| now >= next_save) {
+					save(path, &trees, [samples, verification])
+						.inspect_err(|_| shared.stop.store(true, Ordering::Relaxed))?;
+					next_save += config.save_every;
+				}
+			}
+			Ok(())
+		});
+		let handles: Vec<_> = (0..threads)
 			.map(|t| {
 				let (tree, shared) = (&trees[t % trees.len()], &shared);
 				let seed = config.seed ^ (t as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
 				scope.spawn(move || match division {
-					true => worker::<W, true>(tree, shared, seed),
-					false => worker::<W, false>(tree, shared, seed),
+					true => worker::<W, true>(tree, shared, t, seed),
+					false => worker::<W, false>(tree, shared, t, seed),
 				})
 			})
 			.collect();
-		handles
+		let playouts: u64 = handles
 			.into_iter()
 			.map(|handle| handle.join().unwrap())
-			.sum()
+			.sum();
+		shared.stop.store(true, Ordering::Relaxed);
+		(playouts, monitor.join().unwrap())
 	});
+	saved?;
+	if let Some(path) = &config.save {
+		save(path, &trees, [samples, verification])?;
+	}
 
 	let exhausted = trees.iter().any(|tree| tree.root.is_exhausted());
-	Outcome {
+	Ok(Outcome {
 		tokens: shared.solution.into_inner(),
 		exhausted,
 		playouts,
 		elapsed: start.elapsed(),
+	})
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::{checkpoint::read_header, eval::SAMPLES, expr::Grammar};
+
+	#[test]
+	fn test_checkpoint_roundtrip() {
+		let lanes = |seed: u64| {
+			std::array::from_fn(|i| {
+				let x = (seed * SAMPLES as u64 + i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+				(x ^ x >> 31).wrapping_mul(0xbf58_476d_1ce4_e5b9) ^ x >> 29
+			})
+		};
+		let samples = Samples::<u64>::new(vec![lanes(1), lanes(2)], &[], lanes(3));
+		let verification = Samples::<u64>::new(vec![lanes(4), lanes(5)], &[], lanes(6));
+		let productions = Grammar::new(&["add", "mul", "remu", "not"], Vec::new())
+			.unwrap()
+			.productions(2);
+		let dir = std::env::temp_dir().join(format!("r2deob-test-{}", std::process::id()));
+		fs::create_dir_all(&dir).unwrap();
+		let (first, second) = (dir.join("first"), dir.join("second"));
+		let config = SearchConfig {
+			threads: 2,
+			trees: 2,
+			expand_after: 1,
+			timeout: Some(Duration::from_millis(200)),
+			save: Some(first.clone()),
+			..SearchConfig::default()
+		};
+		let outcome = search(
+			&productions,
+			&samples,
+			&verification,
+			&config,
+			None,
+			&|_| {},
+		)
+		.unwrap();
+		assert!(outcome.tokens.is_none() && outcome.playouts > 0);
+
+		let mut input = io::BufReader::new(File::open(&first).unwrap());
+		let header = read_header::<u64>(&mut input).unwrap();
+		assert_eq!(header.productions, productions);
+		assert_eq!(header.samples.output, samples.output);
+		assert_eq!(header.verification.columns[1], verification.columns[1]);
+		let resumed = SearchConfig {
+			timeout: Some(Duration::ZERO),
+			save: Some(second.clone()),
+			..config
+		};
+		let outcome = search(
+			&header.productions,
+			&header.samples,
+			&header.verification,
+			&resumed,
+			Some(&mut input),
+			&|_| {},
+		)
+		.unwrap();
+		assert_eq!(outcome.playouts, 0);
+		assert_eq!(fs::read(&first).unwrap(), fs::read(&second).unwrap());
+		assert!(fs::metadata(&first).unwrap().len() > 100_000);
+		fs::remove_dir_all(dir).unwrap();
 	}
 }

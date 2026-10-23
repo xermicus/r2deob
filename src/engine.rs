@@ -1,10 +1,17 @@
-use std::{fmt, time::Duration};
+use std::{
+	fmt,
+	fs::File,
+	io::{BufReader, Read},
+	path::Path,
+	time::Duration,
+};
 
 use polkavm::{
 	Config, Engine, InterruptKind, Module, ModuleConfig, ProgramCounter, RawInstance, Reg,
 };
 
 use crate::{
+	checkpoint,
 	eval::{SAMPLES, Samples, Word},
 	expr::{Expression, Grammar},
 	mcts::{self, SearchConfig},
@@ -17,16 +24,18 @@ pub enum Error {
 	UnknownExport(String),
 	UnknownRegister(String),
 	Interrupted(InterruptKind),
+	Checkpoint(&'static str),
 }
 
 impl fmt::Display for Error {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
-			Error::Io(error) => write!(f, "failed to read program: {error}"),
+			Error::Io(error) => write!(f, "I/O error: {error}"),
 			Error::Vm(error) => write!(f, "PolkaVM error: {error}"),
 			Error::UnknownExport(name) => write!(f, "program has no export named '{name}'"),
 			Error::UnknownRegister(name) => write!(f, "unknown register '{name}'"),
 			Error::Interrupted(kind) => write!(f, "execution did not finish: {kind:?}"),
+			Error::Checkpoint(reason) => write!(f, "cannot resume: {reason}"),
 		}
 	}
 }
@@ -64,6 +73,14 @@ pub struct FcnConfig {
 	pub input_regs: Vec<String>,
 	pub output_reg: String,
 	pub width: Width,
+}
+
+pub struct Status {
+	pub elapsed: Duration,
+	pub playouts: u64,
+	pub nodes: usize,
+	pub best_score: f64,
+	pub best: Option<Expression>,
 }
 
 #[derive(Debug)]
@@ -155,29 +172,87 @@ impl Session {
 	}
 
 	/// Drops the VM after sampling, before the search starts.
-	pub fn deobfuscate(self, grammar: &Grammar, config: &SearchConfig) -> Result<Synthesis, Error> {
+	pub fn deobfuscate(
+		self,
+		grammar: &Grammar,
+		config: &SearchConfig,
+		resume: Option<&Path>,
+		progress: &(dyn Fn(&Status) + Sync),
+	) -> Result<Synthesis, Error> {
 		match self.fcn_config.width {
-			Width::W32 => self.synthesize::<u32>(grammar, config),
-			Width::W64 => self.synthesize::<u64>(grammar, config),
+			Width::W32 => self.synthesize::<u32>(grammar, config, resume, progress),
+			Width::W64 => self.synthesize::<u64>(grammar, config, resume, progress),
 		}
+	}
+
+	fn check<W: Word>(&mut self, samples: &Samples<W>) -> Result<(), Error> {
+		for i in 0..SAMPLES {
+			let args: Vec<u64> = samples.columns[..self.input_regs.len()]
+				.iter()
+				.map(|column| column[i].to_reg())
+				.collect();
+			if W::from_reg(self.call(&args)?) != samples.output[i] {
+				return Err(Error::Checkpoint("its samples do not match the target"));
+			}
+		}
+		Ok(())
 	}
 
 	fn synthesize<W: Word>(
 		mut self,
 		grammar: &Grammar,
 		config: &SearchConfig,
+		resume: Option<&Path>,
+		progress: &(dyn Fn(&Status) + Sync),
 	) -> Result<Synthesis, Error> {
-		let samples = self.sample::<W>(&grammar.constants, false)?;
-		let verification = self.sample::<W>(&grammar.constants, true)?;
 		let productions = grammar.productions(self.input_regs.len());
-		let leaves = self
+		let mut checkpoint = resume.map(File::open).transpose()?.map(BufReader::new);
+		let (samples, verification) = match &mut checkpoint {
+			Some(input) => {
+				let header = checkpoint::read_header::<W>(input)?;
+				if header.productions != productions || header.max_len != config.max_len {
+					return Err(Error::Checkpoint(
+						"it was made with different --ops, --consts or --max-len",
+					));
+				}
+				self.check(&header.samples)?;
+				self.check(&header.verification)?;
+				(header.samples, header.verification)
+			}
+			None => (
+				self.sample::<W>(&grammar.constants, false)?,
+				self.sample::<W>(&grammar.constants, true)?,
+			),
+		};
+		let leaves: Vec<String> = self
 			.fcn_config
 			.input_regs
 			.into_iter()
 			.chain(grammar.constants.iter().map(u64::to_string))
 			.collect();
 		drop(self.instance);
-		let outcome = mcts::search(&productions, &samples, &verification, config);
+
+		let report = |p: &mcts::Progress| {
+			progress(&Status {
+				elapsed: p.elapsed,
+				playouts: p.playouts,
+				nodes: p.nodes,
+				best_score: p.best_score,
+				best: (!p.best.is_empty()).then(|| Expression {
+					tokens: p.best.to_vec(),
+					leaves: leaves.clone(),
+				}),
+			})
+		};
+		let resume = checkpoint.as_mut().map(|input| input as &mut dyn Read);
+		let outcome = mcts::search(
+			&productions,
+			&samples,
+			&verification,
+			config,
+			resume,
+			&report,
+		)?;
 		Ok(Synthesis {
 			expression: outcome.tokens.map(|tokens| Expression { tokens, leaves }),
 			exhausted: outcome.exhausted,

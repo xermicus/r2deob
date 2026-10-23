@@ -2,7 +2,7 @@ use std::{path::PathBuf, time::Duration};
 
 use clap::{Parser, ValueEnum};
 use r2deob::{
-	engine::{FcnConfig, Session, Width},
+	engine::{FcnConfig, Session, Status, Width},
 	expr::Grammar,
 	mcts::SearchConfig,
 };
@@ -63,12 +63,46 @@ struct Args {
 	/// Playout seed [default: random]
 	#[arg(long)]
 	seed: Option<u64>,
+	/// Seconds between progress lines on stderr
+	#[arg(long, default_value_t = SearchConfig::default().progress_every.as_secs_f64())]
+	stats: f64,
+	/// Write the search trees to this checkpoint periodically and at the end
+	#[arg(long)]
+	save: Option<PathBuf>,
+	/// Seconds between checkpoints
+	#[arg(long, default_value_t = SearchConfig::default().save_every.as_secs_f64())]
+	save_every: f64,
+	/// Continue from a checkpoint written by --save
+	#[arg(long)]
+	resume: Option<PathBuf>,
 	/// Repeat the search on fresh samples and report the median time
 	#[arg(long, default_value_t = 1)]
 	runs: u64,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn print_status(status: &Status) {
+	eprint!(
+		"{:>9.0?} {:>14} playouts {:>6.1} M/s {:>10} nodes  best {:.4}",
+		status.elapsed,
+		status.playouts,
+		status.playouts as f64 / status.elapsed.as_secs_f64() / 1e6,
+		status.nodes,
+		status.best_score
+	);
+	match &status.best {
+		Some(best) => eprintln!("  {best}"),
+		None => eprintln!(),
+	}
+}
+
+fn main() {
+	if let Err(error) = run() {
+		eprintln!("error: {error}");
+		std::process::exit(1);
+	}
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
 	let args = Args::parse();
 	let grammar = Grammar::new(&args.ops, args.consts)?;
 	let defaults = SearchConfig::default();
@@ -99,8 +133,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			seed: args
 				.seed
 				.map_or_else(rand::random, |seed| seed.wrapping_add(run)),
+			progress_every: Duration::from_secs_f64(args.stats),
+			save: args.save.clone(),
+			save_every: Duration::from_secs_f64(args.save_every),
 		};
-		let synthesis = Session::init(target.clone())?.deobfuscate(&grammar, &config)?;
+		let synthesis = Session::init(target.clone())?.deobfuscate(
+			&grammar,
+			&config,
+			args.resume.as_deref(),
+			&print_status,
+		)?;
 		let rate = synthesis.playouts as f64 / synthesis.elapsed.as_secs_f64() / 1e6;
 		print!(
 			"{:>9.3?} {:>12} playouts {rate:>6.1} M/s  ",

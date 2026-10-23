@@ -61,6 +61,9 @@ struct Args {
 	max_len: usize,
 	#[arg(long, default_value_t = SearchConfig::default().exploration)]
 	exploration: f64,
+	/// Weight of a node's best playout score against its mean, from 0 to 1
+	#[arg(long, default_value_t = SearchConfig::default().max_weight)]
+	max_weight: f32,
 	/// Timeout per run in seconds [default: none]
 	#[arg(long)]
 	timeout: Option<f64>,
@@ -138,6 +141,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 			trees: args.trees.unwrap_or(threads),
 			max_len: args.max_len,
 			exploration: args.exploration,
+			max_weight: args.max_weight,
 			expand_after: args.expand_after,
 			playouts: args.playouts,
 			max_nodes: args.max_nodes,

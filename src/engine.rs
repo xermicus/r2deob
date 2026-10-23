@@ -207,7 +207,7 @@ impl Session {
 	) -> Result<Synthesis, Error> {
 		let productions = grammar.productions(self.input_regs.len());
 		let mut checkpoint = resume.map(File::open).transpose()?.map(BufReader::new);
-		let (samples, verification) = match &mut checkpoint {
+		let (samples, verification, version) = match &mut checkpoint {
 			Some(input) => {
 				let header = checkpoint::read_header::<W>(input)?;
 				if header.productions != productions || header.max_len != config.max_len {
@@ -217,11 +217,12 @@ impl Session {
 				}
 				self.check(&header.samples)?;
 				self.check(&header.verification)?;
-				(header.samples, header.verification)
+				(header.samples, header.verification, header.version)
 			}
 			None => (
 				self.sample::<W>(&grammar.constants, false)?,
 				self.sample::<W>(&grammar.constants, true)?,
+				0,
 			),
 		};
 		let leaves: Vec<String> = self
@@ -244,7 +245,9 @@ impl Session {
 				}),
 			})
 		};
-		let resume = checkpoint.as_mut().map(|input| input as &mut dyn Read);
+		let resume = checkpoint
+			.as_mut()
+			.map(|input| (input as &mut dyn Read, version));
 		let outcome = mcts::search(
 			&productions,
 			&samples,

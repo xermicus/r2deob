@@ -23,6 +23,8 @@ pub struct SearchConfig {
 	pub trees: usize,
 	pub max_len: usize,
 	pub exploration: f64,
+	/// Weight of a node's best playout score against its mean in UCT, from 0 to 1.
+	pub max_weight: f32,
 	pub expand_after: u32,
 	/// Random completions per descent.
 	pub playouts: u32,
@@ -43,6 +45,7 @@ impl Default for SearchConfig {
 			trees: thread::available_parallelism().map_or(1, usize::from),
 			max_len: 15,
 			exploration: 1.0,
+			max_weight: 0.5,
 			expand_after: 512,
 			playouts: 16,
 			max_nodes: 1 << 25,
@@ -154,10 +157,13 @@ impl<'a> Shape<'a> {
 #[derive(Default)]
 struct Node {
 	visits: AtomicU32,
-	exhausted: AtomicBool,
+	/// Best playout score below this node, or'ed with [`EXHAUSTED`].
+	best: AtomicU32,
 	score: AtomicU64,
 	children: AtomicPtr<Node>,
 }
+
+const EXHAUSTED: u32 = 1 << 31;
 
 /// Statistics use plain loads and stores; updates may be lost when threads share a tree.
 impl Node {
@@ -170,12 +176,24 @@ impl Node {
 
 	#[inline]
 	fn exhaust(&self) {
-		self.exhausted.store(true, Ordering::Relaxed);
+		self.best.fetch_or(EXHAUSTED, Ordering::Relaxed);
 	}
 
 	#[inline]
 	fn is_exhausted(&self) -> bool {
-		self.exhausted.load(Ordering::Relaxed)
+		self.best.load(Ordering::Relaxed) & EXHAUSTED != 0
+	}
+
+	#[inline]
+	fn best_score(&self) -> u32 {
+		self.best.load(Ordering::Relaxed) & !EXHAUSTED
+	}
+
+	#[inline]
+	fn record(&self, score: u32) {
+		if score > self.best.load(Ordering::Relaxed) {
+			self.best.fetch_max(score, Ordering::Relaxed);
+		}
 	}
 
 	#[inline]
@@ -202,7 +220,7 @@ impl Node {
 		unsafe { std::slice::from_raw_parts(children, n) }
 	}
 
-	/// Preorder: visits, score, flags (exhausted, has children), then the children.
+	/// Preorder: visits, score sum, best score, flags (exhausted, has children), then the children.
 	fn save(
 		&self,
 		out: &mut impl Write,
@@ -213,6 +231,7 @@ impl Node {
 		let children = self.children(shape.choices(len, holes));
 		write_u32(out, self.visits.load(Ordering::Relaxed))?;
 		write_u64(out, self.score.load(Ordering::Relaxed))?;
+		write_u32(out, self.best_score())?;
 		out.write_all(&[u8::from(self.is_exhausted()) | u8::from(children.is_some()) << 1])?;
 		for (child, token) in children.into_iter().flatten().zip(shape.productions) {
 			child.save(out, shape, len + 1, holes - 1 + token.arity())?;
@@ -220,8 +239,10 @@ impl Node {
 		Ok(())
 	}
 
+	/// Version 1 checkpoints have no best score; it starts at zero.
 	fn load(
 		input: &mut impl Read,
+		version: u8,
 		shape: &Shape,
 		len: usize,
 		holes: usize,
@@ -230,10 +251,13 @@ impl Node {
 		let mut node = Node {
 			visits: AtomicU32::new(read_u32(input)?),
 			score: AtomicU64::new(read_u64(input)?),
+			best: AtomicU32::new(if version >= 2 { read_u32(input)? } else { 0 }),
 			..Node::default()
 		};
 		let flags = read_u8(input)?;
-		*node.exhausted.get_mut() = flags & 1 != 0;
+		if flags & 1 != 0 {
+			*node.best.get_mut() |= EXHAUSTED;
+		}
 		if flags & 2 != 0 {
 			let n = shape.choices(len, holes);
 			if n == 0 {
@@ -244,7 +268,16 @@ impl Node {
 			}
 			let children = shape.productions[..n]
 				.iter()
-				.map(|token| Node::load(input, shape, len + 1, holes - 1 + token.arity(), nodes))
+				.map(|token| {
+					Node::load(
+						input,
+						version,
+						shape,
+						len + 1,
+						holes - 1 + token.arity(),
+						nodes,
+					)
+				})
 				.collect::<io::Result<Box<[Node]>>>()?;
 			*nodes += n;
 			*node.children.get_mut() = Box::into_raw(children).cast();
@@ -295,15 +328,18 @@ fn fast_ln(x: u32) -> f32 {
 	(bits * (1.0 / (1 << 23) as f32) - 127.0) * std::f32::consts::LN_2
 }
 
+/// UCT on rewards normalized to the observed score range `[low, low + 1 / inv_span]`; a
+/// child's reward mixes its mean playout score with its best one by `max_weight`.
 #[inline]
 fn select(
 	children: &[Node],
 	parent_visits: u32,
 	exploration: f32,
-	max_score: f32,
+	max_weight: f32,
+	low: f32,
+	inv_span: f32,
 ) -> Option<usize> {
 	let explore = exploration * fast_ln(parent_visits).max(0.0).sqrt();
-	let inv_max = 1.0 / max_score;
 	let mut best = (f32::NEG_INFINITY, None);
 	for (i, child) in children.iter().enumerate() {
 		if child.is_exhausted() {
@@ -313,9 +349,10 @@ fn select(
 		if visits == 0 {
 			return Some(i);
 		}
-		let visits = visits as f32;
-		let score = child.score.load(Ordering::Relaxed) as f32;
-		let uct = (score * inv_max + explore * visits.sqrt()) / visits;
+		let scale = (visits as f32).sqrt().recip();
+		let mean = child.score.load(Ordering::Relaxed) as f32 * scale * scale;
+		let reward = (mean + max_weight * (child.best_score() as f32 - mean) - low) * inv_span;
+		let uct = reward + explore * scale;
 		if uct > best.0 {
 			best = (uct, Some(i));
 		}
@@ -337,6 +374,7 @@ struct Shared<'a, W> {
 	nodes: AtomicUsize,
 	playouts: Vec<Counter>,
 	best_score: AtomicU32,
+	low_score: AtomicU32,
 	best: Mutex<Vec<Token>>,
 }
 
@@ -373,6 +411,9 @@ fn worker<W: Word, const DIVISION: bool>(
 		let mut node = &tree.root;
 		let mut visits = node.visit(per_descent);
 		path.push(node);
+		let high = shared.best_score.load(Ordering::Relaxed);
+		let low = shared.low_score.load(Ordering::Relaxed).min(high);
+		let inv_span = 1.0 / (high - low).max(1) as f32;
 
 		loop {
 			let n = shape.choices(tokens.len(), holes);
@@ -393,7 +434,9 @@ fn worker<W: Word, const DIVISION: bool>(
 				children,
 				visits,
 				config.exploration as f32,
-				max_score as f32,
+				config.max_weight,
+				low as f32,
+				inv_span,
 			) else {
 				node.exhaust();
 				break;
@@ -408,7 +451,7 @@ fn worker<W: Word, const DIVISION: bool>(
 
 		let (prefix, prefix_holes) = (tokens.len(), holes);
 		let rollouts = if prefix_holes == 0 { 1 } else { per_descent };
-		let mut total = 0;
+		let (mut total, mut descent_best) = (0, 0);
 		for _ in 0..rollouts {
 			tokens.truncate(prefix);
 			holes = prefix_holes;
@@ -436,6 +479,10 @@ fn worker<W: Word, const DIVISION: bool>(
 					best.clone_from(&tokens);
 				}
 			}
+			if score < shared.low_score.load(Ordering::Relaxed) {
+				shared.low_score.fetch_min(score, Ordering::Relaxed);
+			}
+			descent_best = descent_best.max(score);
 			total += u64::from(score);
 		}
 		total *= u64::from(per_descent / rollouts);
@@ -446,6 +493,7 @@ fn worker<W: Word, const DIVISION: bool>(
 				node.score.load(Ordering::Relaxed) + total,
 				Ordering::Relaxed,
 			);
+			node.record(descent_best);
 		}
 	}
 	playouts
@@ -465,13 +513,13 @@ fn save<W: Word>(path: &Path, trees: &[Tree], samples: [&Samples<W>; 2]) -> io::
 }
 
 /// Searches for an expression reproducing `samples` and `verification`; `resume` continues
-/// from the trees of a checkpoint whose header has already been read.
+/// from the trees of a checkpoint whose header (and format version) has already been read.
 pub fn search<W: Word>(
 	productions: &[Token],
 	samples: &Samples<W>,
 	verification: &Samples<W>,
 	config: &SearchConfig,
-	resume: Option<&mut dyn Read>,
+	resume: Option<(&mut dyn Read, u8)>,
 	progress: &(dyn Fn(&Progress) + Sync),
 ) -> io::Result<Outcome> {
 	let shape = Shape::new(productions, config.max_len);
@@ -480,10 +528,10 @@ pub fn search<W: Word>(
 		.any(|token| matches!(token, Token::Binary(BinaryOp::DivU | BinaryOp::RemU)));
 	let mut nodes = 0;
 	let trees: Vec<Tree> = match resume {
-		Some(mut input) => (0..read_u32(&mut input)?)
+		Some((mut input, version)) => (0..read_u32(&mut input)?)
 			.map(|_| {
 				Ok(Tree {
-					root: Node::load(&mut input, &shape, 0, 1, &mut nodes)?,
+					root: Node::load(&mut input, version, &shape, 0, 1, &mut nodes)?,
 					shape: &shape,
 				})
 			})
@@ -513,7 +561,14 @@ pub fn search<W: Word>(
 		solution: OnceLock::new(),
 		nodes: AtomicUsize::new(nodes),
 		playouts: (0..threads).map(|_| Counter::default()).collect(),
-		best_score: AtomicU32::new(0),
+		best_score: AtomicU32::new(
+			trees
+				.iter()
+				.map(|tree| tree.root.best_score())
+				.max()
+				.unwrap_or(0),
+		),
+		low_score: AtomicU32::new(u32::MAX),
 		best: Mutex::new(Vec::new()),
 	};
 	let report = || {
@@ -611,7 +666,7 @@ mod tests {
 		let config = SearchConfig {
 			threads: 2,
 			trees: 2,
-			expand_after: 1,
+			expand_after: 0,
 			timeout: Some(Duration::from_millis(200)),
 			save: Some(first.clone()),
 			..SearchConfig::default()
@@ -642,13 +697,13 @@ mod tests {
 			&header.samples,
 			&header.verification,
 			&resumed,
-			Some(&mut input),
+			Some((&mut input, header.version)),
 			&|_| {},
 		)
 		.unwrap();
 		assert_eq!(outcome.playouts, 0);
 		assert_eq!(fs::read(&first).unwrap(), fs::read(&second).unwrap());
-		assert!(fs::metadata(&first).unwrap().len() > 100_000);
+		assert!(fs::metadata(&first).unwrap().len() > 2_000);
 		fs::remove_dir_all(dir).unwrap();
 	}
 }

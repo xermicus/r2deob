@@ -1,2 +1,4 @@
 /target
 /guest/target
+*.ckpt
+*.log

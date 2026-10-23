@@ -5,10 +5,12 @@ use crate::{
 	expr::{BinaryOp, Token, UnaryOp},
 };
 
-const MAGIC: &[u8; 8] = b"r2deob\0\x01";
+const MAGIC: &[u8; 7] = b"r2deob\0";
+const VERSION: u8 = 2;
 
 /// The part of a checkpoint preceding the trees.
 pub struct Header<W> {
+	pub version: u8,
 	pub productions: Vec<Token>,
 	pub max_len: usize,
 	pub samples: Samples<W>,
@@ -92,6 +94,7 @@ pub fn write_header<W: Word>(
 	batches: [&Samples<W>; 2],
 ) -> io::Result<()> {
 	out.write_all(MAGIC)?;
+	out.write_all(&[VERSION])?;
 	write_u32(out, W::BITS)?;
 	write_u32(out, SAMPLES as u32)?;
 	write_u32(out, max_len as u32)?;
@@ -108,10 +111,14 @@ pub fn write_header<W: Word>(
 }
 
 pub fn read_header<W: Word>(input: &mut impl Read) -> io::Result<Header<W>> {
-	let mut magic = [0; 8];
+	let mut magic = [0; 7];
 	input.read_exact(&mut magic)?;
 	if &magic != MAGIC {
 		return Err(invalid("not an r2deob checkpoint"));
+	}
+	let version = read_u8(input)?;
+	if !(1..=VERSION).contains(&version) {
+		return Err(invalid("unsupported version"));
 	}
 	if read_u32(input)? != W::BITS {
 		return Err(invalid("different width"));
@@ -140,6 +147,7 @@ pub fn read_header<W: Word>(input: &mut impl Read) -> io::Result<Header<W>> {
 	let samples = batch()?;
 	let verification = batch()?;
 	Ok(Header {
+		version,
 		productions,
 		max_len,
 		samples,

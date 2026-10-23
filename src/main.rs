@@ -1,4 +1,8 @@
-use std::{path::PathBuf, time::Duration};
+use std::{
+	path::PathBuf,
+	sync::atomic::{AtomicBool, Ordering},
+	time::Duration,
+};
 
 use clap::{Parser, ValueEnum};
 use r2deob::{
@@ -95,8 +99,16 @@ fn print_status(status: &Status) {
 	}
 }
 
+static INTERRUPT: AtomicBool = AtomicBool::new(false);
+
 fn main() {
-	if let Err(error) = run() {
+	let handler = ctrlc::set_handler(|| {
+		if INTERRUPT.swap(true, Ordering::Relaxed) {
+			std::process::exit(130);
+		}
+		eprintln!("interrupted, stopping (Ctrl-C again to exit immediately)");
+	});
+	if let Err(error) = handler.map_err(Into::into).and_then(|()| run()) {
 		eprintln!("error: {error}");
 		std::process::exit(1);
 	}
@@ -136,6 +148,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 			progress_every: Duration::from_secs_f64(args.stats),
 			save: args.save.clone(),
 			save_every: Duration::from_secs_f64(args.save_every),
+			interrupt: Some(&INTERRUPT),
 		};
 		let synthesis = Session::init(target.clone())?.deobfuscate(
 			&grammar,
@@ -153,11 +166,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 				solved += 1;
 				println!("Winner! {expression}");
 			}
+			None if INTERRUPT.load(Ordering::Relaxed) => println!("Interrupted"),
 			None if synthesis.exhausted => println!("Search space exhausted"),
 			None => println!("No candidate found"),
 		}
 		times.push(synthesis.elapsed);
 		playouts += synthesis.playouts;
+		if INTERRUPT.load(Ordering::Relaxed) {
+			break;
+		}
 	}
 	if args.runs > 1 {
 		times.sort();

@@ -32,6 +32,8 @@ pub struct SearchConfig {
 	pub progress_every: Duration,
 	pub save: Option<PathBuf>,
 	pub save_every: Duration,
+	/// Stops the search like a timeout when set, e.g. from a Ctrl-C handler.
+	pub interrupt: Option<&'static AtomicBool>,
 }
 
 impl Default for SearchConfig {
@@ -49,6 +51,7 @@ impl Default for SearchConfig {
 			progress_every: Duration::from_secs(10),
 			save: None,
 			save_every: Duration::from_secs(600),
+			interrupt: None,
 		}
 	}
 }
@@ -534,6 +537,12 @@ pub fn search<W: Word>(
 				(start + config.progress_every, start + config.save_every);
 			while !shared.stop.load(Ordering::Relaxed) {
 				thread::sleep(Duration::from_millis(50));
+				if config
+					.interrupt
+					.is_some_and(|interrupt| interrupt.load(Ordering::Relaxed))
+				{
+					shared.stop.store(true, Ordering::Relaxed);
+				}
 				let now = Instant::now();
 				if now >= next_progress {
 					report();

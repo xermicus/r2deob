@@ -1,8 +1,7 @@
 use std::{fmt, time::Duration};
 
 use polkavm::{
-	Config, CorePinning, Engine, InterruptKind, Module, ModuleConfig, ProgramCounter, RawInstance,
-	Reg,
+	Config, Engine, InterruptKind, Module, ModuleConfig, ProgramCounter, RawInstance, Reg,
 };
 
 use crate::{
@@ -59,6 +58,7 @@ pub enum Width {
 }
 
 /// The function to deobfuscate: an export of a `.polkavm` program blob.
+#[derive(Debug, Clone)]
 pub struct FcnConfig {
 	pub path: String,
 	pub export: String,
@@ -84,12 +84,8 @@ pub struct Session {
 }
 
 impl Session {
-	/// Loads the program with PolkaVM's core pinning disabled; pinning the calling thread would
-	/// confine every search thread spawned from it to that single core.
 	pub fn init(fcn: FcnConfig) -> Result<Session, Error> {
-		let mut config = Config::from_env()?;
-		config.set_core_pinning(CorePinning::Disabled);
-		let engine = Engine::new(&config)?;
+		let engine = Engine::new(&Config::from_env()?)?;
 		let module = Module::new(
 			&engine,
 			&ModuleConfig::new(),
@@ -160,11 +156,8 @@ impl Session {
 		Ok(Samples::new(inputs, constants, output))
 	}
 
-	pub fn deobfuscate(
-		&mut self,
-		grammar: &Grammar,
-		config: &SearchConfig,
-	) -> Result<Synthesis, Error> {
+	/// Samples the target, drops the VM, then searches on the samples alone.
+	pub fn deobfuscate(self, grammar: &Grammar, config: &SearchConfig) -> Result<Synthesis, Error> {
 		match self.fcn_config.width {
 			Width::W32 => self.synthesize::<u32>(grammar, config),
 			Width::W64 => self.synthesize::<u64>(grammar, config),
@@ -172,25 +165,21 @@ impl Session {
 	}
 
 	fn synthesize<W: Word>(
-		&mut self,
+		mut self,
 		grammar: &Grammar,
 		config: &SearchConfig,
 	) -> Result<Synthesis, Error> {
 		let samples = self.sample::<W>(&grammar.constants, false)?;
 		let verification = self.sample::<W>(&grammar.constants, true)?;
-		let outcome = mcts::search(
-			&grammar.productions(self.input_regs.len()),
-			&samples,
-			&verification,
-			config,
-		);
+		let productions = grammar.productions(self.input_regs.len());
 		let leaves = self
 			.fcn_config
 			.input_regs
-			.iter()
-			.cloned()
+			.into_iter()
 			.chain(grammar.constants.iter().map(u64::to_string))
 			.collect();
+		drop(self.instance);
+		let outcome = mcts::search(&productions, &samples, &verification, config);
 		Ok(Synthesis {
 			expression: outcome.tokens.map(|tokens| Expression { tokens, leaves }),
 			exhausted: outcome.exhausted,

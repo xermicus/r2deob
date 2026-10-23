@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let grammar = Grammar::new(&args.ops, args.consts)?;
 	let defaults = SearchConfig::default();
 	let threads = args.threads.unwrap_or(defaults.threads);
-	let mut session = Session::init(FcnConfig {
+	let target = FcnConfig {
 		path: args.program.to_string_lossy().into_owned(),
 		export: args.export.clone(),
 		input_regs: args.inputs,
@@ -81,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			Bits::W32 => Width::W32,
 			Bits::W64 => Width::W64,
 		},
-	})?;
+	};
 
 	let mut times = Vec::new();
 	let (mut solved, mut playouts) = (0, 0);
@@ -97,7 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			timeout: Duration::from_secs_f64(args.timeout),
 			seed: args.seed.wrapping_add(run),
 		};
-		let synthesis = session.deobfuscate(&grammar, &config)?;
+		let synthesis = Session::init(target.clone())?.deobfuscate(&grammar, &config)?;
 		let rate = synthesis.playouts as f64 / synthesis.elapsed.as_secs_f64() / 1e6;
 		print!(
 			"{:>9.3?} {:>12} playouts {rate:>6.1} M/s  ",

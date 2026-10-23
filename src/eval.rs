@@ -1,7 +1,5 @@
 use crate::expr::{BinaryOp, Token, UnaryOp};
 
-/// Samples per batch. The search scores candidates on a random batch and confirms exact
-/// matches on a second batch that includes edge cases.
 pub const SAMPLES: usize = 16;
 
 pub type Lanes<W> = [W; SAMPLES];
@@ -33,8 +31,7 @@ pub trait Word: Copy + Default + PartialEq + Ord + std::fmt::Debug + Send + Sync
 	fn div_by(self, divisor: &Divisor<Self>) -> Self;
 }
 
-/// Precomputed reciprocal for exact division by an invariant divisor (Granlund–Montgomery
-/// round-up method with the add fix-up for divisors needing a `BITS + 1` bit multiplier).
+/// Granlund–Montgomery reciprocal of an invariant divisor.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Divisor<W> {
 	value: W,
@@ -207,8 +204,7 @@ impl<W: Word> Samples<W> {
 		3 * W::BITS * SAMPLES as u32
 	}
 
-	/// Similarity to the expected output: Hamming, arithmetic (log-scale) and byte-wise
-	/// distance per sample, summed; equals [`Self::max_score`] iff all samples match.
+	/// Equals [`Self::max_score`] iff all samples match.
 	#[inline]
 	pub fn score(&self, value: &Lanes<W>) -> u32 {
 		let bitwise: u32 = value
@@ -223,9 +219,7 @@ impl<W: Word> Samples<W> {
 	}
 }
 
-/// Leading bits of `x - y` equal to its sign bit, summed. The independent accumulators keep
-/// this scalar, where `lzcnt` is far cheaper than its AVX2 emulation; inlining it lets the
-/// SLP vectorizer undo that.
+/// Kept scalar and out of line: AVX2 has no `lzcnt`, and inlined the SLP vectorizer emulates it.
 #[inline(never)]
 fn sign_bits<W: Word>(value: &Lanes<W>, output: &Lanes<W>) -> u32 {
 	let mut acc = [0; 4];
@@ -243,15 +237,12 @@ fn sign_bits<W: Word>(value: &Lanes<W>, output: &Lanes<W>) -> u32 {
 	acc.iter().sum()
 }
 
-/// Prefix-expression evaluator. Slots still holding a leaf remember its column, so division
-/// by a leaf uses the precomputed reciprocals instead of hardware division.
 pub struct Evaluator<W> {
 	stack: Vec<Lanes<W>>,
 }
 
 const COMPUTED: u8 = u8::MAX;
 
-/// Deepest evaluation stack supported, i.e. expressions of up to `2 * MAX_DEPTH - 1` tokens.
 pub const MAX_DEPTH: usize = 32;
 
 #[inline(always)]
@@ -298,8 +289,7 @@ impl<W: Word> Evaluator<W> {
 		}
 	}
 
-	/// Evaluates a complete prefix expression on all samples. `DIVISION` enables the tracking
-	/// behind the reciprocal fast path; without it division always uses hardware division.
+	/// `DIVISION` enables reciprocals for division by a leaf.
 	pub fn eval<const DIVISION: bool>(
 		&mut self,
 		tokens: &[Token],

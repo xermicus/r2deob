@@ -57,9 +57,9 @@ struct Args {
 	max_len: usize,
 	#[arg(long, default_value_t = SearchConfig::default().exploration)]
 	exploration: f64,
-	/// Timeout per run in seconds
-	#[arg(long, default_value_t = 60.0)]
-	timeout: f64,
+	/// Timeout per run in seconds [default: none]
+	#[arg(long)]
+	timeout: Option<f64>,
 	#[arg(long, default_value_t = 0)]
 	seed: u64,
 	/// Repeat the search on fresh samples and report the median time
@@ -94,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			expand_after: args.expand_after,
 			playouts: args.playouts,
 			max_nodes: args.max_nodes,
-			timeout: Duration::from_secs_f64(args.timeout),
+			timeout: args.timeout.map(Duration::from_secs_f64),
 			seed: args.seed.wrapping_add(run),
 		};
 		let synthesis = Session::init(target.clone())?.deobfuscate(&grammar, &config)?;

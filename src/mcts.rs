@@ -16,17 +16,14 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct SearchConfig {
 	pub threads: usize,
-	/// Threads are spread round-robin over this many independent trees.
 	pub trees: usize,
 	pub max_len: usize,
 	pub exploration: f64,
-	/// Descents through a node before it is expanded.
 	pub expand_after: u32,
-	/// Random completions evaluated per tree descent; `expand_after` counts descents.
+	/// Random completions per descent.
 	pub playouts: u32,
-	/// Node budget across all trees; once spent, trees stop growing.
 	pub max_nodes: usize,
-	pub timeout: Duration,
+	pub timeout: Option<Duration>,
 	pub seed: u64,
 }
 
@@ -40,7 +37,7 @@ impl Default for SearchConfig {
 			expand_after: 512,
 			playouts: 16,
 			max_nodes: 1 << 25,
-			timeout: Duration::from_secs(60),
+			timeout: None,
 			seed: 0,
 		}
 	}
@@ -49,7 +46,6 @@ impl Default for SearchConfig {
 #[derive(Debug)]
 pub struct Outcome {
 	pub tokens: Option<Vec<Token>>,
-	/// Every expression up to `max_len` was evaluated without a match.
 	pub exhausted: bool,
 	pub playouts: u64,
 	pub elapsed: Duration,
@@ -65,8 +61,7 @@ struct Shape<'a> {
 	playout: [Vec<Token>; 3],
 }
 
-/// Relative probability of picking a leaf, unary or binary production during a playout,
-/// chosen so that random expansions are subcritical and stay small.
+/// Leaf, unary and binary weights; keeps random expansions subcritical.
 const PLAYOUT_WEIGHTS: [usize; 3] = [3, 1, 2];
 
 impl<'a> Shape<'a> {
@@ -120,8 +115,7 @@ impl<'a> Shape<'a> {
 		table[rng.below(table.len())]
 	}
 
-	/// Number of productions allowed for the next hole; they are always a prefix of
-	/// `productions` because productions are ordered by arity.
+	/// Allowed productions are a prefix of `productions`, which is ordered by arity.
 	#[inline]
 	fn choices(&self, len: usize, holes: usize) -> usize {
 		if holes == 0 {
@@ -143,8 +137,7 @@ struct Node {
 	children: AtomicPtr<Node>,
 }
 
-/// Statistics use plain loads and stores instead of read-modify-write atomics: exact with
-/// one thread per tree, and losing the occasional update when threads share a tree.
+/// Statistics use plain loads and stores; updates may be lost when threads share a tree.
 impl Node {
 	#[inline]
 	fn visit(&self, count: u32) -> u32 {
@@ -153,7 +146,6 @@ impl Node {
 		visits
 	}
 
-	/// Marks a subtree whose expressions have all been evaluated.
 	#[inline]
 	fn exhaust(&self) {
 		self.exhausted.store(true, Ordering::Relaxed);
@@ -201,7 +193,6 @@ impl Node {
 	}
 }
 
-/// Cache-line aligned so the roots of independent trees do not false-share.
 #[repr(align(64))]
 struct Tree<'a> {
 	root: Node,
@@ -226,7 +217,6 @@ impl WyRand {
 	}
 }
 
-/// `ln(x)` from the float exponent and a linear mantissa, within 0.06 of the exact value.
 #[inline]
 fn fast_ln(x: u32) -> f32 {
 	let bits = (x as f32).to_bits() as f32;
@@ -265,7 +255,7 @@ struct Shared<'a, W> {
 	samples: &'a Samples<W>,
 	verification: &'a Samples<W>,
 	config: &'a SearchConfig,
-	deadline: Instant,
+	deadline: Option<Instant>,
 	stop: AtomicBool,
 	solution: OnceLock<Vec<Token>>,
 	nodes: AtomicUsize,
@@ -286,7 +276,10 @@ fn worker<W: Word, const DIVISION: bool>(tree: &Tree, shared: &Shared<W>, seed: 
 	for descent in 0u64.. {
 		if shared.stop.load(Ordering::Relaxed)
 			|| tree.root.is_exhausted()
-			|| descent % 256 == 0 && Instant::now() >= shared.deadline
+			|| descent % 256 == 0
+				&& shared
+					.deadline
+					.is_some_and(|deadline| Instant::now() >= deadline)
 		{
 			break;
 		}
@@ -366,8 +359,6 @@ fn worker<W: Word, const DIVISION: bool>(tree: &Tree, shared: &Shared<W>, seed: 
 	playouts
 }
 
-/// Searches for an expression over `productions` that reproduces `samples` and
-/// `verification` exactly; only `samples` guides the search.
 pub fn search<W: Word>(
 	productions: &[Token],
 	samples: &Samples<W>,
@@ -390,7 +381,7 @@ pub fn search<W: Word>(
 		samples,
 		verification,
 		config,
-		deadline: start + config.timeout,
+		deadline: config.timeout.map(|timeout| start + timeout),
 		stop: AtomicBool::new(false),
 		solution: OnceLock::new(),
 		nodes: AtomicUsize::new(0),

@@ -117,7 +117,6 @@ pub struct Grammar {
 }
 
 impl Grammar {
-	/// Builds a grammar from operation names such as `add`, `mulhu` or `not`.
 	pub fn new<S: AsRef<str>>(ops: &[S], constants: Vec<u64>) -> Result<Grammar, String> {
 		let mut grammar = Grammar {
 			unary: Vec::new(),
@@ -152,7 +151,6 @@ impl Grammar {
 	}
 }
 
-/// A complete expression in prefix notation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Expression {
 	pub tokens: Vec<Token>,

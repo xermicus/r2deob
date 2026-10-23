@@ -57,7 +57,6 @@ pub enum Width {
 	W64,
 }
 
-/// The function to deobfuscate: an export of a `.polkavm` program blob.
 #[derive(Debug, Clone)]
 pub struct FcnConfig {
 	pub path: String,
@@ -123,7 +122,6 @@ impl Session {
 		}
 	}
 
-	/// Runs the target function on [`SAMPLES`] random inputs, led by edge cases if `edge_cases`.
 	pub fn sample<W: Word>(
 		&mut self,
 		constants: &[u64],
@@ -156,7 +154,7 @@ impl Session {
 		Ok(Samples::new(inputs, constants, output))
 	}
 
-	/// Samples the target, drops the VM, then searches on the samples alone.
+	/// Drops the VM after sampling, before the search starts.
 	pub fn deobfuscate(self, grammar: &Grammar, config: &SearchConfig) -> Result<Synthesis, Error> {
 		match self.fcn_config.width {
 			Width::W32 => self.synthesize::<u32>(grammar, config),

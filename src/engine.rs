@@ -90,7 +90,10 @@ pub struct Status {
 
 #[derive(Debug)]
 pub struct Synthesis {
+	/// The first expression found that reproduces the search samples.
 	pub expression: Option<Expression>,
+	/// Whether `expression` also reproduces the verification samples.
+	pub verified: bool,
 	/// Definitions of the compressed leaves that `expression` refers to, directly or through
 	/// other definitions, with their indices in `M0`, `M1`, ...
 	pub macros: Vec<(usize, Expression)>,
@@ -337,6 +340,7 @@ impl Session {
 				.as_ref()
 				.map(|solution| expression(&base, solution, library.len())),
 			macros,
+			verified: outcome.verified,
 			exhausted: outcome.exhausted,
 			playouts: outcome.playouts,
 			elapsed: outcome.elapsed,

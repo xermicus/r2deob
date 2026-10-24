@@ -92,7 +92,10 @@ pub struct Problem<W> {
 
 #[derive(Debug)]
 pub struct Outcome {
+	/// The first expression found that reproduces the search samples.
 	pub solution: Option<Term>,
+	/// Whether `solution` also reproduces the verification samples.
+	pub verified: bool,
 	pub exhausted: bool,
 	pub playouts: u64,
 	pub elapsed: Duration,
@@ -532,7 +535,7 @@ struct Shared<'a, W> {
 	global: &'a Global,
 	stop: AtomicBool,
 	stalled: AtomicBool,
-	solution: OnceLock<Vec<Token>>,
+	solution: OnceLock<(Vec<Token>, bool)>,
 	nodes: AtomicUsize,
 	playouts: Vec<Counter>,
 	exploration: AtomicU32,
@@ -639,11 +642,11 @@ fn worker<W: Word, const DIVISION: bool>(
 			let column = evaluator.eval::<DIVISION>(&tokens, samples);
 			let score = samples.score(column);
 			tree.offer(score, column, &tokens, &samples.columns);
-			if score == max_score
-				&& verification.score(evaluator.eval::<DIVISION>(&tokens, verification))
-					== max_score
-			{
-				let _ = shared.solution.set(tokens.clone());
+			if score == max_score {
+				let verified = verification
+					.score(evaluator.eval::<DIVISION>(&tokens, verification))
+					== max_score;
+				let _ = shared.solution.set((tokens.clone(), verified));
 				shared.stop.store(true, Ordering::Relaxed);
 			}
 			if score > global.best_score.load(Ordering::Relaxed) {
@@ -688,7 +691,7 @@ fn save<W: Word>(path: &Path, trees: &[Tree<W>], problem: &Problem<W>) -> io::Re
 }
 
 struct RoundOutcome<W> {
-	solution: Option<Vec<Token>>,
+	solution: Option<(Vec<Token>, bool)>,
 	/// Ended by a solution, the deadline or an interrupt.
 	finished: bool,
 	exhausted: bool,
@@ -913,7 +916,8 @@ fn search_rounds<W: Word, const DIVISION: bool>(
 		};
 		if added == 0 && (outcome.finished || !outcome.stalled) {
 			return Ok(Outcome {
-				solution: outcome.solution.map(|tokens| Term {
+				verified: outcome.solution.as_ref().is_some_and(|solution| solution.1),
+				solution: outcome.solution.map(|(tokens, _)| Term {
 					tokens,
 					first: problem.first,
 				}),
@@ -994,6 +998,20 @@ mod tests {
 		assert_eq!(problem.first, 5);
 		check_library(&problem, &inputs.0, &problem.samples);
 		check_library(&problem, &inputs.1, &problem.verification);
+	}
+
+	#[test]
+	fn test_unverified_solution_stops() {
+		let mut problem = problem(&["add"]);
+		problem.samples.output = problem.samples.columns[0];
+		let config = SearchConfig {
+			threads: 1,
+			timeout: Some(Duration::from_secs(10)),
+			..SearchConfig::default()
+		};
+		let outcome = search(problem, &config, None, &|_| {}).unwrap();
+		assert_eq!(outcome.solution.unwrap().tokens, [Token::Leaf(0)]);
+		assert!(!outcome.verified);
 	}
 
 	#[test]

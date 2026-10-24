@@ -79,6 +79,9 @@ struct Args {
 	/// Seconds between progress lines on stderr
 	#[arg(long, default_value_t = SearchConfig::default().progress_every.as_secs_f64())]
 	stats: f64,
+	/// Add the best expression and the definitions it uses to progress lines
+	#[arg(short, long)]
+	verbose: bool,
 	/// Write the search trees to this checkpoint periodically and at the end
 	#[arg(long)]
 	save: Option<PathBuf>,
@@ -93,7 +96,7 @@ struct Args {
 	runs: u64,
 }
 
-fn print_status(status: &Status) {
+fn print_status(status: &Status, verbose: bool) {
 	eprint!(
 		"{:>9.0?} {:>14} playouts {:>6.1} M/s {:>10} nodes  explore {:>5.1}  best {:.4}",
 		status.elapsed,
@@ -104,11 +107,13 @@ fn print_status(status: &Status) {
 		status.best_score
 	);
 	match &status.best {
-		Some(best) => eprintln!("  {best}"),
-		None => eprintln!(),
+		Some(best) if verbose => eprintln!("  {best}"),
+		_ => eprintln!(),
 	}
-	for (i, definition) in &status.macros {
-		eprintln!("    M{i} = {definition}");
+	if verbose {
+		for (i, definition) in &status.macros {
+			eprintln!("    M{i} = {definition}");
+		}
 	}
 }
 
@@ -174,7 +179,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 			&grammar,
 			&config,
 			args.resume.as_deref(),
-			&print_status,
+			&|status| print_status(status, args.verbose),
 		)?;
 		let rate = synthesis.playouts as f64 / synthesis.elapsed.as_secs_f64() / 1e6;
 		print!(
@@ -183,8 +188,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 		);
 		match synthesis.expression {
 			Some(expression) => {
-				solved += 1;
-				println!("Winner! {expression}");
+				if synthesis.verified {
+					solved += 1;
+					println!("Winner! {expression}");
+				} else {
+					println!("Looser! {expression}");
+				}
 				for (i, definition) in &synthesis.macros {
 					println!("    M{i} = {definition}");
 				}

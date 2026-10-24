@@ -39,9 +39,8 @@ pub struct SearchConfig {
 	pub save_every: Duration,
 	/// Stops the search like a timeout when set, e.g. from a Ctrl-C handler.
 	pub interrupt: Option<&'static AtomicBool>,
-	/// Time without a new best after which the best expressions of the trees become leaves,
-	/// the oldest compressed ones beyond `MACRO_LEAVES` drop out, and the search restarts
-	/// over the new leaf set.
+	/// Time without a new best after which the best expressions of the trees become leaves in
+	/// place of the oldest compressed ones, and the search restarts over the new leaf set.
 	pub compress_after: Option<Duration>,
 }
 
@@ -63,7 +62,7 @@ impl Default for SearchConfig {
 			save: None,
 			save_every: Duration::from_secs(600),
 			interrupt: None,
-			compress_after: Some(Duration::from_secs(30)),
+			compress_after: Some(Duration::from_secs(3)),
 		}
 	}
 }
@@ -123,12 +122,9 @@ struct Shape<'a> {
 
 const MAX_EXPLORATION_SCALE: f64 = 32.0;
 
-/// Expressions compressed per stall, and the size of each tree's elite.
+/// Expressions compressed per stall, the size of each tree's elite, and how many of the newest
+/// library entries are leaves; older ones live on in the entries built from them.
 const COMPRESSED_PER_ROUND: usize = 4;
-
-/// The newest library entries that are leaves; older ones live on in the entries built from
-/// them.
-const MACRO_LEAVES: usize = 32;
 
 /// Leaf indices are `u8`, with `u8::MAX` reserved by the evaluator.
 const MAX_LEAVES: usize = u8::MAX as usize;
@@ -485,19 +481,19 @@ struct Global {
 
 impl<W: Word> Problem<W> {
 	/// Adds the best distinct `candidates` to the library and as leaves, keeping the newest
-	/// [`MACRO_LEAVES`] entries as leaves; returns how many were added.
+	/// [`COMPRESSED_PER_ROUND`] entries as leaves; returns how many were added.
 	fn compress<const DIVISION: bool>(
 		&mut self,
 		mut candidates: Vec<Candidate<W>>,
 		max_len: usize,
 	) -> usize {
 		let base = self.samples.columns.len() - (self.library.len() - self.first);
-		let window = MACRO_LEAVES.min(MAX_LEAVES - base);
+		let window = COMPRESSED_PER_ROUND.min(MAX_LEAVES - base);
 		candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.score));
 		let mut evaluator = Evaluator::new(max_len);
 		let mut added = 0;
 		for candidate in candidates {
-			if added == COMPRESSED_PER_ROUND.min(window) {
+			if added == window {
 				break;
 			}
 			if self.samples.columns.contains(&candidate.column) {
@@ -979,7 +975,7 @@ mod tests {
 		let mut problem = problem(&["add"]);
 		let inputs = (problem.samples.clone(), problem.verification.clone());
 		let mut evaluator = Evaluator::new(3);
-		for _ in 0..MACRO_LEAVES + 5 {
+		for _ in 0..COMPRESSED_PER_ROUND + 5 {
 			let newest = problem.samples.columns.len() as u8 - 1;
 			let tokens = vec![
 				Token::Binary(BinaryOp::Add),
@@ -994,7 +990,7 @@ mod tests {
 			};
 			assert_eq!(problem.compress::<false>(vec![candidate], 3), 1);
 		}
-		assert_eq!(problem.library.len(), MACRO_LEAVES + 5);
+		assert_eq!(problem.library.len(), COMPRESSED_PER_ROUND + 5);
 		assert_eq!(problem.first, 5);
 		check_library(&problem, &inputs.0, &problem.samples);
 		check_library(&problem, &inputs.1, &problem.verification);

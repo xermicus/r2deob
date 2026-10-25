@@ -7,7 +7,7 @@ use crate::{
 };
 
 const MAGIC: &[u8; 7] = b"r2deob\0";
-const VERSION: u8 = 3;
+const VERSION: u8 = 4;
 
 /// The part of a checkpoint preceding the trees.
 pub struct Header<W> {
@@ -86,14 +86,14 @@ fn read_lanes<W: Word>(input: &mut impl Read) -> io::Result<Lanes<W>> {
 	Ok(lanes)
 }
 
-fn write_tokens(out: &mut impl Write, tokens: &[Token]) -> io::Result<()> {
+pub fn write_tokens(out: &mut impl Write, tokens: &[Token]) -> io::Result<()> {
 	write_u32(out, tokens.len() as u32)?;
 	tokens
 		.iter()
 		.try_for_each(|&token| out.write_all(&encode(token)))
 }
 
-fn read_tokens(input: &mut impl Read) -> io::Result<Vec<Token>> {
+pub fn read_tokens(input: &mut impl Read) -> io::Result<Vec<Token>> {
 	(0..read_u32(input)?)
 		.map(|_| {
 			let mut bytes = [0; 2];

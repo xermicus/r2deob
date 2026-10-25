@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use crate::expr::{BinaryOp, Token, UnaryOp};
 
-pub const SAMPLES: usize = 16;
+pub const SAMPLES: usize = 128;
 
 pub type Lanes<W> = [W; SAMPLES];
 

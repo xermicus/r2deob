@@ -12,7 +12,9 @@ use std::{
 };
 
 use crate::{
-	checkpoint::{read_u8, read_u32, read_u64, write_header, write_u32, write_u64},
+	checkpoint::{
+		read_tokens, read_u8, read_u32, read_u64, write_header, write_tokens, write_u32, write_u64,
+	},
 	eval::{Evaluator, Lanes, Samples, Word},
 	expr::{BinaryOp, Token},
 };
@@ -677,7 +679,12 @@ fn worker<W: Word, const DIVISION: bool>(
 	playouts
 }
 
-fn save<W: Word>(path: &Path, trees: &[Tree<W>], problem: &Problem<W>) -> io::Result<()> {
+fn save<W: Word>(
+	path: &Path,
+	trees: &[Tree<W>],
+	problem: &Problem<W>,
+	global: &Global,
+) -> io::Result<()> {
 	let shape = trees[0].shape;
 	let partial = path.with_extension("partial");
 	let mut out = BufWriter::new(File::create(&partial)?);
@@ -686,6 +693,11 @@ fn save<W: Word>(path: &Path, trees: &[Tree<W>], problem: &Problem<W>) -> io::Re
 	for tree in trees {
 		tree.root.save(&mut out, shape)?;
 	}
+	let best = global.best.lock().unwrap();
+	write_u32(&mut out, global.best_score.load(Ordering::Relaxed))?;
+	write_u32(&mut out, best.first as u32)?;
+	write_tokens(&mut out, &best.tokens)?;
+	drop(best);
 	out.into_inner()?.sync_all()?;
 	fs::rename(partial, path)
 }
@@ -711,15 +723,29 @@ fn run_round<W: Word, const DIVISION: bool>(
 ) -> io::Result<RoundOutcome<W>> {
 	let shape = Shape::new(&problem.productions, config.max_len);
 	let mut nodes = 0;
+	let resumed = resume.is_some();
 	let mut trees: Vec<Tree<W>> = match resume {
-		Some((mut input, version)) => (0..read_u32(&mut input)?)
-			.map(|_| {
-				Ok(Tree::new(
-					Node::load(&mut input, version, &shape, &mut nodes)?,
-					&shape,
-				))
-			})
-			.collect::<io::Result<_>>()?,
+		Some((mut input, version)) => {
+			let trees = (0..read_u32(&mut input)?)
+				.map(|_| {
+					Ok(Tree::new(
+						Node::load(&mut input, version, &shape, &mut nodes)?,
+						&shape,
+					))
+				})
+				.collect::<io::Result<_>>()?;
+			if version >= 4 {
+				global
+					.best_score
+					.store(read_u32(&mut input)?, Ordering::Relaxed);
+				let first = read_u32(&mut input)? as usize;
+				*global.best.lock().unwrap() = Term {
+					tokens: read_tokens(&mut input)?,
+					first,
+				};
+			}
+			trees
+		}
 		None => (0..config.trees.clamp(1, config.threads.max(1)))
 			.map(|_| Tree::new(Node::default(), &shape))
 			.collect(),
@@ -768,6 +794,9 @@ fn run_round<W: Word, const DIVISION: bool>(
 			library: &problem.library,
 		});
 	};
+	if resumed {
+		report();
+	}
 	let round_start = Instant::now();
 	let (playouts, saved) = thread::scope(|scope| {
 		let monitor = scope.spawn(|| -> io::Result<()> {
@@ -821,7 +850,7 @@ fn run_round<W: Word, const DIVISION: bool>(
 					next_progress += config.progress_every;
 				}
 				if let Some(path) = config.save.as_deref().filter(|_| now >= next_save) {
-					save(path, &trees, problem)
+					save(path, &trees, problem, global)
 						.inspect_err(|_| shared.stop.store(true, Ordering::Relaxed))?;
 					next_save += config.save_every;
 				}
@@ -857,7 +886,7 @@ fn run_round<W: Word, const DIVISION: bool>(
 			.is_some_and(|deadline| Instant::now() >= deadline);
 	let stalled = shared.stalled.load(Ordering::Relaxed);
 	if let Some(path) = config.save.as_deref().filter(|_| finished || !stalled) {
-		save(path, &trees, problem)?;
+		save(path, &trees, problem, global)?;
 	}
 
 	Ok(RoundOutcome {
